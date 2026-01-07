@@ -93,7 +93,7 @@ const applyCustomAccentColor = (theme, customColor) => {
     applyColorToObject(customizedTheme, 'button2.color.primary.bg', customColor);
     applyColorToObject(customizedTheme, 'button2.color.primary.border', customColor);
     applyColorToObject(customizedTheme, 'button2.color.light.text', customColor);
-    
+
     // Create rgba versions for light button backgrounds
     const rgba = (color, alpha) => {
       const hex = color.replace('#', '');
@@ -102,7 +102,7 @@ const applyCustomAccentColor = (theme, customColor) => {
       const b = parseInt(hex.substr(4, 2), 16);
       return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     };
-    
+
     applyColorToObject(customizedTheme, 'button2.color.light.bg', rgba(customColor, 0.08));
     applyColorToObject(customizedTheme, 'button2.color.light.border', rgba(customColor, 0.06));
 
@@ -121,11 +121,11 @@ const applyCustomAccentColor = (theme, customColor) => {
 
     // Update checkbox color
     applyColorToObject(customizedTheme, 'request.checkboxColor', customColor);
-    
+
     // Update specific button colors that might be hardcoded to orange
     applyColorToObject(customizedTheme, 'modal.buttonColor', customColor);
     applyColorToObject(customizedTheme, 'modal.buttonBg', rgba(customColor, 0.1));
-    
+
     // Update any other accent-related properties
     applyColorToObject(customizedTheme, 'requestTabPanel.responseStatus', customColor);
     applyColorToObject(customizedTheme, 'sidebar.accent', customColor);
