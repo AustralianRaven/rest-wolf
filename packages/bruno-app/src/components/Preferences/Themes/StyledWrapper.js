@@ -97,6 +97,28 @@ const StyledWrapper = styled.div`
     background: ${(props) => props.theme.input.border};
     margin: 15px 0;
   }
+
+  .customization-section {
+    padding: 12px 0;
+  }
+
+  .customization-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 12px;
+  }
+
+  .customization-title {
+    font-size: ${(props) => props.theme.font.size.sm};
+    color: ${(props) => props.theme.colors.text.muted};
+    font-weight: 600;
+  }
+
+  .customization-subtitle {
+    font-size: ${(props) => props.theme.font.size.xs};
+    color: ${(props) => props.theme.colors.text.subtext1};
+  }
 `;
 
 export default StyledWrapper;

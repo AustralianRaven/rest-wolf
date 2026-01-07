@@ -45,6 +45,12 @@ const defaultPreferences = {
   layout: {
     responsePaneOrientation: 'horizontal'
   },
+  theme: {
+    customColors: {
+      light: '#546de5', // Default Bruno blue
+      dark: '#546de5' // Default Bruno blue
+    }
+  },
   beta: {},
   onboarding: {
     hasLaunchedBefore: false
@@ -96,6 +102,12 @@ const preferencesSchema = Yup.object().shape({
   }),
   layout: Yup.object({
     responsePaneOrientation: Yup.string().oneOf(['horizontal', 'vertical'])
+  }),
+  theme: Yup.object({
+    customColors: Yup.object({
+      light: Yup.string().matches(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Must be a valid hex color'),
+      dark: Yup.string().matches(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Must be a valid hex color')
+    })
   }),
   beta: Yup.object({
   }),
@@ -294,6 +306,26 @@ const preferencesUtil = {
       await savePreferences(preferences);
     } catch (err) {
       console.error('Failed to save preferences in markAsLaunched:', err);
+    }
+  },
+  getCustomAccentColor: (theme) => {
+    return get(getPreferences(), `theme.customColors.${theme}`, '#546de5');
+  },
+  setCustomAccentColor: async (theme, color) => {
+    const preferences = getPreferences();
+    if (!preferences.theme) {
+      preferences.theme = { customColors: { light: '#546de5', dark: '#546de5' } };
+    }
+    if (!preferences.theme.customColors) {
+      preferences.theme.customColors = { light: '#546de5', dark: '#546de5' };
+    }
+    preferences.theme.customColors[theme] = color;
+
+    try {
+      await savePreferences(preferences);
+    } catch (err) {
+      console.error('Failed to save custom accent color:', err);
+      throw err;
     }
   }
 };
