@@ -1694,3 +1694,6 @@ export const generateUniqueRequestName = async (collection, baseName = 'Untitled
 
   return `${baseName}${nextNumber}`;
 };
+
+// Export tab preservation utilities
+export { getPreservedRequestPaneTab, getPreservedRequestPaneTabForType } from './tabPreservation';

@@ -36,7 +36,7 @@ import RunCollectionItem from './RunCollectionItem';
 import GenerateCodeItem from './GenerateCodeItem';
 import { isItemARequest, isItemAFolder } from 'utils/tabs';
 import { doesRequestMatchSearchText, doesFolderHaveItemsMatchSearchText } from 'utils/collections/search';
-import { getDefaultRequestPaneTab } from 'utils/collections';
+import { getPreservedRequestPaneTab } from 'utils/collections';
 import toast from 'react-hot-toast';
 import StyledWrapper from './StyledWrapper';
 import NetworkError from 'components/ResponsePane/NetworkError/index';
@@ -63,6 +63,9 @@ const CollectionItem = ({ item, collectionUid, collectionPathname, searchText })
 
   const _isTabForItemPresentSelector = isTabForItemPresentSelector({ itemUid: item.uid });
   const isTabForItemPresent = useSelector(_isTabForItemPresentSelector, isEqual);
+
+  const tabs = useSelector((state) => state.tabs.tabs);
+  const activeTabUid = useSelector((state) => state.tabs.activeTabUid);
 
   const isSidebarDragging = useSelector((state) => state.app.isDragging);
   const collection = useSelector((state) => state.collections.collections?.find((c) => c.uid === collectionUid));
@@ -224,11 +227,15 @@ const CollectionItem = ({ item, collectionUid, collectionPathname, searchText })
         );
         return;
       }
+
+      // Get the currently active tab to preserve its requestPaneTab
+      const requestPaneTabToUse = getPreservedRequestPaneTab(item, tabs, activeTabUid);
+
       dispatch(
         addTab({
           uid: item.uid,
           collectionUid: collectionUid,
-          requestPaneTab: getDefaultRequestPaneTab(item),
+          requestPaneTab: requestPaneTabToUse,
           type: 'request'
         })
       );

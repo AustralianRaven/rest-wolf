@@ -11,7 +11,7 @@ import { newEphemeralHttpRequest } from 'providers/ReduxStore/slices/collections
 import { newHttpRequest, newGrpcRequest, newWsRequest } from 'providers/ReduxStore/slices/collections/actions';
 import { addTab } from 'providers/ReduxStore/slices/tabs';
 import HttpMethodSelector from 'components/RequestPane/QueryUrl/HttpMethodSelector';
-import { getDefaultRequestPaneTab } from 'utils/collections';
+import { getPreservedRequestPaneTabForType } from 'utils/collections';
 import { getRequestFromCurlCommand } from 'utils/curl';
 import { IconArrowBackUp, IconCaretDown, IconEdit } from '@tabler/icons';
 import { sanitizeName, validateName, validateNameError } from 'utils/common/regex';
@@ -27,6 +27,9 @@ import Button from 'ui/Button';
 const NewRequest = ({ collectionUid, item, isEphemeral, onClose }) => {
   const dispatch = useDispatch();
   const inputRef = useRef();
+
+  const tabs = useSelector((state) => state.tabs.tabs);
+  const activeTabUid = useSelector((state) => state.tabs.activeTabUid);
 
   const storedTheme = useTheme();
 
@@ -202,7 +205,7 @@ const NewRequest = ({ collectionUid, item, isEphemeral, onClose }) => {
               addTab({
                 uid: uid,
                 collectionUid: collectionUid,
-                requestPaneTab: getDefaultRequestPaneTab({ type: values.requestType })
+                requestPaneTab: getPreservedRequestPaneTabForType(values.requestType, tabs, activeTabUid)
               })
             );
             onClose();

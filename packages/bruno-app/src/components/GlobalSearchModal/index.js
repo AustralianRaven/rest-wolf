@@ -12,7 +12,7 @@ import { flattenItems, isItemARequest, isItemAFolder, findParentItemInCollection
 import { addTab, focusTab } from 'providers/ReduxStore/slices/tabs';
 import { toggleCollectionItem, toggleCollection } from 'providers/ReduxStore/slices/collections';
 import { mountCollection } from 'providers/ReduxStore/slices/collections/actions';
-import { getDefaultRequestPaneTab } from 'utils/collections';
+import { getPreservedRequestPaneTab } from 'utils/collections';
 import { normalizeQuery, isValidQuery, highlightText, sortResults, getTypeLabel, getItemPath } from './utils/searchUtils';
 import { SEARCH_TYPES, MATCH_TYPES, SEARCH_CONFIG, DOCUMENTATION_RESULT } from './constants';
 import StyledWrapper from './StyledWrapper';
@@ -28,6 +28,7 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
 
   const collections = useSelector((state) => state.collections.collections);
   const tabs = useSelector((state) => state.tabs.tabs);
+  const activeTabUid = useSelector((state) => state.tabs.activeTabUid);
 
   const createCollectionResults = () => {
     const collectionResults = collections.map((collection) => ({
@@ -253,7 +254,7 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
         dispatch(addTab({
           uid: result.item.uid,
           collectionUid: result.collectionUid,
-          requestPaneTab: getDefaultRequestPaneTab(result.item),
+          requestPaneTab: getPreservedRequestPaneTab(result.item, tabs, activeTabUid),
           type: 'request'
         }));
       }

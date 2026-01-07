@@ -4,12 +4,13 @@ import { IconAlertTriangle } from '@tabler/icons';
 import StyledWrapper from './StyledWrapper';
 import { useDispatch, useSelector } from 'react-redux';
 import { isItemARequest, itemIsOpenedInTabs } from 'utils/tabs/index';
-import { getDefaultRequestPaneTab } from 'utils/collections/index';
+import { getPreservedRequestPaneTab } from 'utils/collections/index';
 import { addTab, focusTab } from 'providers/ReduxStore/slices/tabs';
 
 const RequestsNotLoaded = ({ collection }) => {
   const dispatch = useDispatch();
   const tabs = useSelector((state) => state.tabs.tabs);
+  const activeTabUid = useSelector((state) => state.tabs.activeTabUid);
   const flattenedItems = flattenItems(collection.items);
   const itemsFailedLoading = flattenedItems?.filter((item) => item?.partial && !item?.loading);
 
@@ -28,11 +29,12 @@ const RequestsNotLoaded = ({ collection }) => {
         );
         return;
       }
+
       dispatch(
         addTab({
           uid: item.uid,
           collectionUid: collection.uid,
-          requestPaneTab: getDefaultRequestPaneTab(item)
+          requestPaneTab: getPreservedRequestPaneTab(item, tabs, activeTabUid)
         })
       );
       return;
