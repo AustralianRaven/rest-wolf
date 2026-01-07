@@ -1,6 +1,6 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import cloneDeep from 'lodash/cloneDeep';
-import { IconTrash, IconAlertCircle, IconInfoCircle } from '@tabler/icons';
+import { IconTrash, IconAlertCircle, IconInfoCircle, IconDownload } from '@tabler/icons';
 import { useTheme } from 'providers/Theme';
 import { useDispatch, useSelector } from 'react-redux';
 import MultiLineEditor from 'components/MultiLineEditor/index';
@@ -25,6 +25,9 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
   const { globalEnvironments, activeGlobalEnvironmentUid, globalEnvironmentDraft } = useSelector(
     (state) => state.globalEnvironments
   );
+  const preferences = useSelector((state) => state.app.preferences);
+
+  const [isFetchingFromVault, setIsFetchingFromVault] = useState(false);
 
   const hasDraftForThisEnv = globalEnvironmentDraft?.environmentUid === environment.uid;
 
@@ -305,6 +308,170 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
     setIsModified(false);
   };
 
+  const handleFetchFromVault = async () => {
+    if (!preferences.azureVault?.enabled) {
+      toast.error('Azure Key Vault is not configured. Please check your preferences.');
+      return;
+    }
+
+    // Find CLUSTER and TENANT_NAME variables in current environment
+    const clusterVar = formik.values.find((v) => v.name === 'CLUSTER' && v.value);
+    const tenantVar = formik.values.find((v) => v.name === 'TENANT_NAME' && v.value);
+
+    if (!clusterVar || !tenantVar) {
+      toast.error('CLUSTER and TENANT_NAME variables are required in the current environment to fetch from vault.');
+      return;
+    }
+
+    setIsFetchingFromVault(true);
+
+    try {
+      // Call the IPC to fetch from vault
+      const result = await window.ipcRenderer.invoke('azure-vault:fetch-secrets', {
+        cluster: clusterVar.value,
+        tenantName: tenantVar.value
+      });
+
+      if (result.success) {
+        console.log('Frontend - Vault fetch result:', JSON.stringify(result, null, 2));
+        console.log('Frontend - keycloakRealmUrl value:', result.credentials.keycloakRealmUrl);
+        console.log('Frontend - keycloakClientId value:', result.credentials.keycloakClientId);
+        console.log('Frontend - keycloakClientSecret exists:', !!result.credentials.keycloakClientSecret);
+
+        // Update or add KeycloakClientId, KeycloakClientSecret, and KeycloakAccessTokenUrl variables
+        const updatedValues = [...formik.values];
+
+        // Find or create KeycloakClientId variable
+        let clientIdIndex = updatedValues.findIndex((v) => v.name === 'KeycloakClientId');
+        if (clientIdIndex === -1) {
+          // Add new variable before the empty row
+          const emptyRowIndex = updatedValues.length - 1;
+          updatedValues.splice(emptyRowIndex, 0, {
+            uid: uuid(),
+            name: 'KeycloakClientId',
+            value: result.credentials.keycloakClientId,
+            type: 'text',
+            secret: false,
+            enabled: true
+          });
+        } else {
+          // Update existing variable
+          updatedValues[clientIdIndex] = {
+            ...updatedValues[clientIdIndex],
+            value: result.credentials.keycloakClientId
+          };
+        }
+
+        // Find or create KeycloakClientSecret variable
+        let clientSecretIndex = updatedValues.findIndex((v) => v.name === 'KeycloakClientSecret');
+        if (clientSecretIndex === -1) {
+          // Add new variable before the empty row
+          const emptyRowIndex = updatedValues.length - 1;
+          updatedValues.splice(emptyRowIndex, 0, {
+            uid: uuid(),
+            name: 'KeycloakClientSecret',
+            value: result.credentials.keycloakClientSecret,
+            type: 'text',
+            secret: true,
+            enabled: true
+          });
+        } else {
+          // Update existing variable
+          updatedValues[clientSecretIndex] = {
+            ...updatedValues[clientSecretIndex],
+            value: result.credentials.keycloakClientSecret,
+            secret: true
+          };
+        }
+
+        // Find or create KeycloakAccessTokenUrl variable
+        console.log('Frontend - About to set KeycloakAccessTokenUrl with value:', result.credentials.keycloakRealmUrl);
+        let accessTokenUrlIndex = updatedValues.findIndex((v) => v.name === 'KeycloakAccessTokenUrl');
+        if (accessTokenUrlIndex === -1) {
+          console.log('Frontend - Creating new KeycloakAccessTokenUrl variable');
+          // Add new variable before the empty row
+          const emptyRowIndex = updatedValues.length - 1;
+          updatedValues.splice(emptyRowIndex, 0, {
+            uid: uuid(),
+            name: 'KeycloakAccessTokenUrl',
+            value: result.credentials.keycloakRealmUrl,
+            type: 'text',
+            secret: false,
+            enabled: true
+          });
+        } else {
+          console.log('Frontend - Updating existing KeycloakAccessTokenUrl variable at index:', accessTokenUrlIndex);
+          // Update existing variable
+          updatedValues[accessTokenUrlIndex] = {
+            ...updatedValues[accessTokenUrlIndex],
+            value: result.credentials.keycloakRealmUrl
+          };
+        }
+        console.log('Frontend - KeycloakAccessTokenUrl variable after update:', updatedValues.find((v) => v.name === 'KeycloakAccessTokenUrl'));
+
+        // Find or create Protocol variable
+        console.log('Frontend - Setting Protocol to "https"');
+        let protocolIndex = updatedValues.findIndex((v) => v.name === 'Protocol');
+        if (protocolIndex === -1) {
+          console.log('Frontend - Creating new Protocol variable');
+          // Add new variable before the empty row
+          const emptyRowIndex = updatedValues.length - 1;
+          updatedValues.splice(emptyRowIndex, 0, {
+            uid: uuid(),
+            name: 'Protocol',
+            value: 'https',
+            type: 'text',
+            secret: false,
+            enabled: true
+          });
+        } else {
+          console.log('Frontend - Updating existing Protocol variable at index:', protocolIndex);
+          // Update existing variable
+          updatedValues[protocolIndex] = {
+            ...updatedValues[protocolIndex],
+            value: 'https'
+          };
+        }
+
+        // Find or create UrlSuffix variable
+        const urlSuffix = `${tenantVar.value}.${clusterVar.value}.rightcrowd.dev`;
+        console.log('Frontend - Setting UrlSuffix to:', urlSuffix);
+        let urlSuffixIndex = updatedValues.findIndex((v) => v.name === 'UrlSuffix');
+        if (urlSuffixIndex === -1) {
+          console.log('Frontend - Creating new UrlSuffix variable');
+          // Add new variable before the empty row
+          const emptyRowIndex = updatedValues.length - 1;
+          updatedValues.splice(emptyRowIndex, 0, {
+            uid: uuid(),
+            name: 'UrlSuffix',
+            value: urlSuffix,
+            type: 'text',
+            secret: false,
+            enabled: true
+          });
+        } else {
+          console.log('Frontend - Updating existing UrlSuffix variable at index:', urlSuffixIndex);
+          // Update existing variable
+          updatedValues[urlSuffixIndex] = {
+            ...updatedValues[urlSuffixIndex],
+            value: urlSuffix
+          };
+        }
+
+        formik.setValues(updatedValues);
+        setIsModified(true);
+
+        toast.success('Successfully fetched Keycloak credentials from Azure Key Vault');
+      } else {
+        toast.error(result.error || 'Failed to fetch secrets from Azure Key Vault');
+      }
+    } catch (error) {
+      toast.error(`Failed to fetch from vault: ${error.message}`);
+    } finally {
+      setIsFetchingFromVault(false);
+    }
+  };
+
   const handleSaveRef = useRef(handleSave);
   handleSaveRef.current = handleSave;
 
@@ -434,6 +601,20 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
           <Button type="reset" size="sm" color="secondary" variant="ghost" onClick={handleReset} data-testid="reset-env">
             Reset
           </Button>
+          {preferences.azureVault?.enabled && (
+            <Button
+              type="button"
+              size="sm"
+              color="primary"
+              variant="outline"
+              onClick={handleFetchFromVault}
+              disabled={isFetchingFromVault}
+              data-testid="fetch-from-vault"
+            >
+              <IconDownload size={14} strokeWidth={1.5} className="mr-1" />
+              {isFetchingFromVault ? 'Fetching...' : 'Fetch from Vault'}
+            </Button>
+          )}
         </div>
       </div>
     </StyledWrapper>

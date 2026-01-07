@@ -36,6 +36,13 @@ const initialState = {
     general: {
       defaultCollectionLocation: ''
     },
+    azureVault: {
+      enabled: false,
+      tenantId: '',
+      clientId: '',
+      clientSecret: '',
+      vaultUrl: ''
+    },
     autoSave: {
       enabled: false,
       interval: 1000

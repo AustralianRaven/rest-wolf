@@ -30,6 +30,8 @@
   },
   "dependencies": {
     "@aws-sdk/credential-providers": "3.750.0",
+    "@azure/identity": "^4.0.0",
+    "@azure/keyvault-secrets": "^4.7.0",
     "archiver": "^7.0.1",
     "@grpc/grpc-js": "^1.13.2",
     "@grpc/proto-loader": "^0.7.13",
