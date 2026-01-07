@@ -314,12 +314,11 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
       return;
     }
 
-    // Find CLUSTER and TENANT_NAME variables in current environment
-    const clusterVar = formik.values.find((v) => v.name === 'CLUSTER' && v.value);
-    const tenantVar = formik.values.find((v) => v.name === 'TENANT_NAME' && v.value);
+    // Find VAULT_SECRET variable in current environment
+    const vaultSecretVar = formik.values.find((v) => v.name === 'VAULT_SECRET' && v.value);
 
-    if (!clusterVar || !tenantVar) {
-      toast.error('CLUSTER and TENANT_NAME variables are required in the current environment to fetch from vault.');
+    if (!vaultSecretVar) {
+      toast.error('VAULT_SECRET variable is required in the current environment to fetch from vault.');
       return;
     }
 
@@ -328,140 +327,50 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
     try {
       // Call the IPC to fetch from vault
       const result = await window.ipcRenderer.invoke('azure-vault:fetch-secrets', {
-        cluster: clusterVar.value,
-        tenantName: tenantVar.value
+        vaultSecret: vaultSecretVar.value
       });
 
-      if (result.success) {
+      if (result.success && result.secrets) {
         console.log('Frontend - Vault fetch result:', JSON.stringify(result, null, 2));
-        console.log('Frontend - keycloakRealmUrl value:', result.credentials.keycloakRealmUrl);
-        console.log('Frontend - keycloakClientId value:', result.credentials.keycloakClientId);
-        console.log('Frontend - keycloakClientSecret exists:', !!result.credentials.keycloakClientSecret);
 
-        // Update or add KeycloakClientId, KeycloakClientSecret, and KeycloakAccessTokenUrl variables
+        // Update or add all variables from vault secrets
         const updatedValues = [...formik.values];
 
-        // Find or create KeycloakClientId variable
-        let clientIdIndex = updatedValues.findIndex((v) => v.name === 'KeycloakClientId');
-        if (clientIdIndex === -1) {
-          // Add new variable before the empty row
-          const emptyRowIndex = updatedValues.length - 1;
-          updatedValues.splice(emptyRowIndex, 0, {
-            uid: uuid(),
-            name: 'KeycloakClientId',
-            value: result.credentials.keycloakClientId,
-            type: 'text',
-            secret: false,
-            enabled: true
-          });
-        } else {
-          // Update existing variable
-          updatedValues[clientIdIndex] = {
-            ...updatedValues[clientIdIndex],
-            value: result.credentials.keycloakClientId
-          };
-        }
+        // Iterate through all secrets and update/add them as environment variables
+        Object.entries(result.secrets).forEach(([secretName, secretValue]) => {
+          const existingIndex = updatedValues.findIndex((v) => v.name === secretName);
 
-        // Find or create KeycloakClientSecret variable
-        let clientSecretIndex = updatedValues.findIndex((v) => v.name === 'KeycloakClientSecret');
-        if (clientSecretIndex === -1) {
-          // Add new variable before the empty row
-          const emptyRowIndex = updatedValues.length - 1;
-          updatedValues.splice(emptyRowIndex, 0, {
-            uid: uuid(),
-            name: 'KeycloakClientSecret',
-            value: result.credentials.keycloakClientSecret,
-            type: 'text',
-            secret: true,
-            enabled: true
-          });
-        } else {
-          // Update existing variable
-          updatedValues[clientSecretIndex] = {
-            ...updatedValues[clientSecretIndex],
-            value: result.credentials.keycloakClientSecret,
-            secret: true
-          };
-        }
+          // Determine if this should be a secret variable based on name patterns
+          const isSecretVar = secretName.toLowerCase().includes('password')
+            || secretName.toLowerCase().includes('secret')
+            || secretName.toLowerCase().includes('key');
 
-        // Find or create KeycloakAccessTokenUrl variable
-        console.log('Frontend - About to set KeycloakAccessTokenUrl with value:', result.credentials.keycloakRealmUrl);
-        let accessTokenUrlIndex = updatedValues.findIndex((v) => v.name === 'KeycloakAccessTokenUrl');
-        if (accessTokenUrlIndex === -1) {
-          console.log('Frontend - Creating new KeycloakAccessTokenUrl variable');
-          // Add new variable before the empty row
-          const emptyRowIndex = updatedValues.length - 1;
-          updatedValues.splice(emptyRowIndex, 0, {
-            uid: uuid(),
-            name: 'KeycloakAccessTokenUrl',
-            value: result.credentials.keycloakRealmUrl,
-            type: 'text',
-            secret: false,
-            enabled: true
-          });
-        } else {
-          console.log('Frontend - Updating existing KeycloakAccessTokenUrl variable at index:', accessTokenUrlIndex);
-          // Update existing variable
-          updatedValues[accessTokenUrlIndex] = {
-            ...updatedValues[accessTokenUrlIndex],
-            value: result.credentials.keycloakRealmUrl
-          };
-        }
-        console.log('Frontend - KeycloakAccessTokenUrl variable after update:', updatedValues.find((v) => v.name === 'KeycloakAccessTokenUrl'));
-
-        // Find or create Protocol variable
-        console.log('Frontend - Setting Protocol to "https"');
-        let protocolIndex = updatedValues.findIndex((v) => v.name === 'Protocol');
-        if (protocolIndex === -1) {
-          console.log('Frontend - Creating new Protocol variable');
-          // Add new variable before the empty row
-          const emptyRowIndex = updatedValues.length - 1;
-          updatedValues.splice(emptyRowIndex, 0, {
-            uid: uuid(),
-            name: 'Protocol',
-            value: 'https',
-            type: 'text',
-            secret: false,
-            enabled: true
-          });
-        } else {
-          console.log('Frontend - Updating existing Protocol variable at index:', protocolIndex);
-          // Update existing variable
-          updatedValues[protocolIndex] = {
-            ...updatedValues[protocolIndex],
-            value: 'https'
-          };
-        }
-
-        // Find or create UrlSuffix variable
-        const urlSuffix = `${tenantVar.value}.${clusterVar.value}.rightcrowd.dev`;
-        console.log('Frontend - Setting UrlSuffix to:', urlSuffix);
-        let urlSuffixIndex = updatedValues.findIndex((v) => v.name === 'UrlSuffix');
-        if (urlSuffixIndex === -1) {
-          console.log('Frontend - Creating new UrlSuffix variable');
-          // Add new variable before the empty row
-          const emptyRowIndex = updatedValues.length - 1;
-          updatedValues.splice(emptyRowIndex, 0, {
-            uid: uuid(),
-            name: 'UrlSuffix',
-            value: urlSuffix,
-            type: 'text',
-            secret: false,
-            enabled: true
-          });
-        } else {
-          console.log('Frontend - Updating existing UrlSuffix variable at index:', urlSuffixIndex);
-          // Update existing variable
-          updatedValues[urlSuffixIndex] = {
-            ...updatedValues[urlSuffixIndex],
-            value: urlSuffix
-          };
-        }
+          if (existingIndex === -1) {
+            // Add new variable before the empty row
+            const emptyRowIndex = updatedValues.length - 1;
+            updatedValues.splice(emptyRowIndex, 0, {
+              uid: uuid(),
+              name: secretName,
+              value: secretValue,
+              type: 'text',
+              secret: isSecretVar,
+              enabled: true
+            });
+          } else {
+            // Update existing variable
+            updatedValues[existingIndex] = {
+              ...updatedValues[existingIndex],
+              value: secretValue,
+              secret: isSecretVar
+            };
+          }
+        });
 
         formik.setValues(updatedValues);
         setIsModified(true);
 
-        toast.success('Successfully fetched Keycloak credentials from Azure Key Vault');
+        const secretCount = Object.keys(result.secrets).length;
+        toast.success(`Successfully fetched ${secretCount} secrets from Azure Key Vault`);
       } else {
         toast.error(result.error || 'Failed to fetch secrets from Azure Key Vault');
       }
