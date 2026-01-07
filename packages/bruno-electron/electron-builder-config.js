@@ -89,14 +89,13 @@ const config = {
   },
   win: {
     artifactName: '${name}_${version}_${arch}_win.${ext}',
-    icon: 'resources/icons/win/icon.ico',
+    icon: 'resources/icons/png/256x256.png',
     target: [
       {
-        target: 'nsis',
-        arch: ['x64', 'arm64']
+        target: 'portable',
+        arch: ['x64']
       }
     ],
-    sign: null,
     publisherName: 'Bruno Software Inc'
   },
   nsis: {
@@ -104,7 +103,9 @@ const config = {
     allowToChangeInstallationDirectory: true,
     allowElevation: true,
     createDesktopShortcut: true,
-    createStartMenuShortcut: true
+    createStartMenuShortcut: true,
+    artifactName: '${name}_${version}_${arch}_win.${ext}',
+    differentialPackage: false
   }
 };
 
