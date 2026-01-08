@@ -155,8 +155,8 @@ app.on('ready', async () => {
       preload: path.join(__dirname, 'preload.js'),
       webviewTag: true
     },
-    title: 'Bruno',
-    icon: path.join(__dirname, 'about/256x256.png'),
+    title: 'RestWolf',
+    icon: path.join(__dirname, '../resources/icons/png/256x256.png'),
     titleBarStyle: isMac ? 'hiddenInset' : isWindows ? 'hidden' : undefined,
     frame: isLinux ? false : true,
     trafficLightPosition: isMac ? { x: 12, y: 10 } : undefined
