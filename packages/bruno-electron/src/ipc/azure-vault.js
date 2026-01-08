@@ -17,9 +17,9 @@ const registerAzureVaultIpc = (mainWindow) => {
   });
 
   /**
-   * Fetch Keycloak credentials from Azure Key Vault
+   * Fetch all secrets from Azure Key Vault
    */
-  ipcMain.handle('azure-vault:fetch-secrets', async (event, { cluster, tenantName }) => {
+  ipcMain.handle('azure-vault:fetch-secrets', async (event, { vaultSecret }) => {
     try {
       // Get Azure vault configuration from preferences
       const preferences = getPreferences();
@@ -42,11 +42,11 @@ const registerAzureVaultIpc = (mainWindow) => {
         vaultUrl
       });
 
-      const credentials = await vaultService.fetchKeycloakCredentials(cluster, tenantName);
+      const secrets = await vaultService.fetchAllSecrets(vaultSecret);
 
       return {
         success: true,
-        credentials
+        secrets
       };
     } catch (error) {
       console.error('Azure vault fetch error:', error);

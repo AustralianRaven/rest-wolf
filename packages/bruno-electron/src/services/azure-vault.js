@@ -89,51 +89,19 @@ class AzureVaultService {
   }
 
   /**
-   * Construct secret name from cluster and tenant
-   * @param {string} cluster - Cluster name
-   * @param {string} tenantName - Tenant name
-   * @returns {string} Secret name in format 'CLUSTER--TENANT_NAME'
+   * Fetch all secrets from vault using vault secret name
+   * @param {string} vaultSecret - Name of the vault secret containing all environment variables
+   * @returns {Promise<Object>} Object with all secrets from the vault
+   * @throws {Error} If secret is not found or cannot be parsed
    */
-  static constructSecretName(cluster, tenantName) {
-    if (!cluster || !tenantName) {
-      throw new Error('Both cluster and tenant name are required to construct secret name');
-    }
-    return `${cluster}--${tenantName}`;
-  }
+  async fetchAllSecrets(vaultSecret) {
+    const secretData = await this.fetchSecret(vaultSecret);
 
-  /**
-   * Fetch Keycloak credentials from vault using cluster and tenant
-   * @param {string} cluster - Cluster name from environment
-   * @param {string} tenantName - Tenant name from environment
-   * @returns {Promise<Object>} Object with keycloakClientId, keycloakClientSecret, and optionally keycloakRealmUrl
-   * @throws {Error} If secret is not found or missing required fields
-   */
-  async fetchKeycloakCredentials(cluster, tenantName) {
-    const secretName = AzureVaultService.constructSecretName(cluster, tenantName);
-    const secretData = await this.fetchSecret(secretName);
-
-    console.log('Azure Vault - Secret name:', secretName);
+    console.log('Azure Vault - Secret name:', vaultSecret);
     console.log('Azure Vault - Raw secret data:', JSON.stringify(secretData, null, 2));
-    console.log('Azure Vault - KEYCLOAK_REALM_URL value:', secretData.KEYCLOAK_REALM_URL);
-    console.log('Azure Vault - KEYCLOAK_CLIENT_ID value:', secretData.KEYCLOAK_CLIENT_ID);
-    console.log('Azure Vault - KEYCLOAK_CLIENT_SECRET exists:', !!secretData.KEYCLOAK_CLIENT_SECRET);
 
-    const requiredFields = ['KEYCLOAK_REALM_URL', 'KEYCLOAK_CLIENT_ID', 'KEYCLOAK_CLIENT_SECRET'];
-    const missingFields = requiredFields.filter((field) => !secretData[field]);
-
-    if (missingFields.length > 0) {
-      console.error('Azure Vault - Missing fields:', missingFields);
-      throw new Error(`Secret '${secretName}' is missing required fields: ${missingFields.join(', ')}`);
-    }
-
-    const result = {
-      keycloakRealmUrl: secretData.KEYCLOAK_REALM_URL,
-      keycloakClientId: secretData.KEYCLOAK_CLIENT_ID,
-      keycloakClientSecret: secretData.KEYCLOAK_CLIENT_SECRET
-    };
-
-    console.log('Azure Vault - Final result:', JSON.stringify(result, null, 2));
-    return result;
+    // Return all secrets as-is
+    return secretData;
   }
 }
 
