@@ -1,8 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Modal from 'components/Modal/index';
+import { PostHog } from 'posthog-node';
+import { uuid } from 'utils/common';
 import { IconHeart, IconUser, IconUsers, IconPlus } from '@tabler/icons';
+import platformLib from 'platform';
 import StyledWrapper from './StyledWrapper';
 import { useTheme } from 'providers/Theme/index';
+
+let posthogClient = null;
+const posthogApiKey = process.env.NEXT_PUBLIC_POSTHOG_API_KEY;
+const getPosthogClient = () => {
+  if (posthogClient) {
+    return posthogClient;
+  }
+
+  posthogClient = new PostHog(posthogApiKey);
+  return posthogClient;
+};
+const getAnonymousTrackingId = () => {
+  let id = localStorage.getItem('bruno.anonymousTrackingId');
+
+  if (!id || !id.length || id.length !== 21) {
+    id = uuid();
+    localStorage.setItem('bruno.anonymousTrackingId', id);
+  }
+
+  return id;
+};
 
 const HeartIcon = () => {
   return (
@@ -38,8 +62,28 @@ const CheckIcon = () => {
 const GoldenEdition = ({ onClose }) => {
   const { displayedTheme } = useTheme();
 
+  useEffect(() => {
+    const anonymousId = getAnonymousTrackingId();
+    const client = getPosthogClient();
+    client.capture({
+      distinctId: anonymousId,
+      event: 'golden-edition-modal-opened',
+      properties: {
+        os: platformLib.os.family
+      }
+    });
+  }, []);
+
   const goldenEditionBuyClick = () => {
-    // No tracking - just open the pricing page
+    const anonymousId = getAnonymousTrackingId();
+    const client = getPosthogClient();
+    client.capture({
+      distinctId: anonymousId,
+      event: 'golden-edition-buy-clicked',
+      properties: {
+        os: platformLib.os.family
+      }
+    });
   };
 
   const goldenEditionIndividuals = [

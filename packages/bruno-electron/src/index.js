@@ -68,7 +68,7 @@ const apiSpecWatcher = new ApiSpecWatcher();
 // Reference: https://content-security-policy.com/
 const contentSecurityPolicy = [
   'default-src \'self\'',
-  'connect-src \'self\'',
+  'connect-src \'self\' https://*.posthog.com',
   'font-src \'self\' https: data:;',
   'frame-src data:',
   'script-src \'self\' data:',

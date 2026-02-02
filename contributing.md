@@ -5,7 +5,6 @@
 
 ```bash
 # install dependencies and setup
-npm i --legacy-peer-deps
 npm run setup
 ```
 
