@@ -39,6 +39,7 @@ import { doesRequestMatchSearchText, doesFolderHaveItemsMatchSearchText } from '
 import { getPreservedRequestPaneTab } from 'utils/collections';
 import toast from 'react-hot-toast';
 import StyledWrapper from './StyledWrapper';
+import { getKeyBindingsForActionAllOS } from 'providers/Hotkeys/keyMappings';
 import NetworkError from 'components/ResponsePane/NetworkError/index';
 import CollectionItemInfo from './CollectionItemInfo/index';
 import CollectionItemIcon from './CollectionItemIcon';
@@ -494,7 +495,7 @@ const CollectionItem = ({ item, collectionUid, collectionPathname, searchText })
     }));
 
     // Save the request
-    await dispatch(saveRequest(item.uid, collectionUid));
+    await dispatch(saveRequest(item.uid, collectionUid, true));
 
     // Task middleware will track this and open the example in a new tab once the file is reloaded
     dispatch(insertTaskIntoQueue({
@@ -509,8 +510,8 @@ const CollectionItem = ({ item, collectionUid, collectionPathname, searchText })
     setCreateExampleModalOpen(false);
   };
 
-  const folderItems = sortByNameThenSequence(filter(item.items, (i) => isItemAFolder(i)));
-  const requestItems = sortItemsBySequence(filter(item.items, (i) => isItemARequest(i)));
+  const folderItems = sortByNameThenSequence(filter(item.items, (i) => isItemAFolder(i) && !i.isTransient));
+  const requestItems = sortItemsBySequence(filter(item.items, (i) => isItemARequest(i) && !i.isTransient));
 
   const handleGenerateCode = () => {
     if (
@@ -542,7 +543,7 @@ const CollectionItem = ({ item, collectionUid, collectionPathname, searchText })
   const handleCopyItem = () => {
     dispatch(copyRequest(item));
     const itemType = isFolder ? 'Folder' : 'Request';
-    toast.success(`${itemType} copied to clipboard`);
+    toast.success(`${itemType} copied`);
   };
 
   const handlePasteItem = () => {
@@ -568,7 +569,14 @@ const CollectionItem = ({ item, collectionUid, collectionPathname, searchText })
     const isMac = navigator.userAgent?.includes('Mac') || navigator.platform?.startsWith('Mac');
     const isModifierPressed = isMac ? e.metaKey : e.ctrlKey;
 
-    if (isModifierPressed && e.key.toLowerCase() === 'c') {
+    const [macRenameKey, winRenameKey] = getKeyBindingsForActionAllOS('renameItem');
+    const renameKey = isMac ? macRenameKey : winRenameKey;
+
+    if (e.key.toLowerCase() === renameKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setRenameItemModalOpen(true);
+    } else if (isModifierPressed && e.key.toLowerCase() === 'c') {
       e.preventDefault();
       e.stopPropagation();
       handleCopyItem();

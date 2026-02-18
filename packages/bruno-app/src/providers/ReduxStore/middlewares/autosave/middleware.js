@@ -1,5 +1,6 @@
-import { saveRequest, saveCollectionSettings, saveFolderRoot } from '../../slices/collections/actions';
-import { flattenItems, isItemARequest, isItemAFolder } from 'utils/collections';
+import { saveRequest, saveCollectionSettings, saveFolderRoot, saveEnvironment } from '../../slices/collections/actions';
+import { saveGlobalEnvironment } from '../../slices/global-environments';
+import { flattenItems, isItemARequest, isItemAFolder, findItemInCollection, findCollectionByUid, isItemTransientRequest } from 'utils/collections';
 
 const actionsToIntercept = [
   // Request-level actions
@@ -46,6 +47,11 @@ const actionsToIntercept = [
   'collections/updateRequestDocs',
   'collections/runRequestEvent',
   'collections/updateCollectionPresets',
+  'collections/setRequestVars',
+  'collections/setRequestAssertions',
+  'collections/updateItemSettings',
+  'collections/addRequestTag',
+  'collections/deleteRequestTag',
 
   // Folder-level actions
   'collections/addFolderHeader',
@@ -80,7 +86,11 @@ const actionsToIntercept = [
   'collections/updateCollectionDocs',
   'collections/updateCollectionClientCertificates',
   'collections/updateCollectionProtobuf',
-  'collections/updateCollectionProxy'
+  'collections/updateCollectionProxy',
+
+  // Environment draft actions
+  'collections/setEnvironmentsDraft',
+  'global-environments/setGlobalEnvironmentDraft'
 ];
 
 // Simple object to track pending save timers
@@ -100,7 +110,8 @@ const scheduleAutoSave = (key, save, interval) => {
 
 // Helper to find and schedule saves for all existing drafts
 const saveExistingDrafts = (dispatch, getState, interval) => {
-  const collections = getState().collections.collections;
+  const state = getState();
+  const collections = state.collections.collections;
 
   collections.forEach((collection) => {
     // Check collection-level draft
@@ -109,11 +120,24 @@ const saveExistingDrafts = (dispatch, getState, interval) => {
       scheduleAutoSave(key, () => dispatch(saveCollectionSettings(collection.uid, null, true)), interval);
     }
 
+    // Check collection environment drafts
+    if (collection.environmentsDraft) {
+      const { environmentUid, variables } = collection.environmentsDraft;
+      if (environmentUid && variables) {
+        const key = `environment-${collection.uid}-${environmentUid}`;
+        scheduleAutoSave(key, () => dispatch(saveEnvironment(variables, environmentUid, collection.uid)), interval);
+      }
+    }
+
     // Check all items (requests and folders) for drafts
     const allItems = flattenItems(collection.items);
     allItems.forEach((item) => {
       if (item.draft) {
         if (isItemARequest(item)) {
+          // Skip auto-save for transient requests
+          if (isItemTransientRequest(item)) {
+            return;
+          }
           const key = `request-${item.uid}`;
           scheduleAutoSave(key, () => dispatch(saveRequest(item.uid, collection.uid, true)), interval);
         } else if (isItemAFolder(item)) {
@@ -123,6 +147,87 @@ const saveExistingDrafts = (dispatch, getState, interval) => {
       }
     });
   });
+
+  // Check global environment drafts
+  const globalEnvironmentDraft = state.globalEnvironments?.globalEnvironmentDraft;
+  if (globalEnvironmentDraft) {
+    const { environmentUid, variables } = globalEnvironmentDraft;
+    if (environmentUid && variables) {
+      const key = `global-environment-${environmentUid}`;
+      scheduleAutoSave(key, () => dispatch(saveGlobalEnvironment({ variables, environmentUid })), interval);
+    }
+  }
+};
+
+// Helper to determine entity type and create save handler
+const determineSaveHandler = (actionType, payload, dispatch, getState) => {
+  const { itemUid, folderUid, collectionUid, environmentUid } = payload;
+
+  // Handle environment drafts
+  if (actionType === 'collections/setEnvironmentsDraft') {
+    if (!environmentUid || !collectionUid) return null;
+    return {
+      key: `environment-${collectionUid}-${environmentUid}`,
+      save: () => {
+        const state = getState();
+        const collection = state.collections.collections.find((c) => c.uid === collectionUid);
+        const draft = collection?.environmentsDraft;
+        if (draft?.environmentUid === environmentUid && draft?.variables) {
+          dispatch(saveEnvironment(draft.variables, environmentUid, collectionUid));
+        }
+      }
+    };
+  }
+
+  if (actionType === 'global-environments/setGlobalEnvironmentDraft') {
+    if (!environmentUid) return null;
+    return {
+      key: `global-environment-${environmentUid}`,
+      save: () => {
+        const state = getState();
+        const draft = state.globalEnvironments?.globalEnvironmentDraft;
+        if (draft?.environmentUid === environmentUid && draft?.variables) {
+          dispatch(saveGlobalEnvironment({ variables: draft.variables, environmentUid }));
+        }
+      }
+    };
+  }
+
+  // Handle folder actions
+  if (folderUid) {
+    return {
+      key: `folder-${folderUid}`,
+      save: () => dispatch(saveFolderRoot(collectionUid, folderUid, true))
+    };
+  }
+
+  // Handle request actions
+  if (itemUid) {
+    // Check if this is a transient request and skip auto-save
+    const state = getState();
+    const collection = findCollectionByUid(state.collections.collections, collectionUid);
+    if (collection) {
+      const item = findItemInCollection(collection, itemUid);
+      if (item && isItemTransientRequest(item)) {
+        return null; // Skip auto-save for transient requests
+      }
+    }
+
+    return {
+      key: `request-${itemUid}`,
+      save: () => dispatch(saveRequest(itemUid, collectionUid, true))
+    };
+  }
+
+  // Handle collection-level changes
+  if (collectionUid) {
+    return {
+      key: `collection-${collectionUid}`,
+      save: () => dispatch(saveCollectionSettings(collectionUid, null, true))
+    };
+  }
+
+  return null;
 };
 
 export const autosaveMiddleware = ({ dispatch, getState }) => (next) => (action) => {
@@ -150,28 +255,9 @@ export const autosaveMiddleware = ({ dispatch, getState }) => (next) => (action)
   // Only handle actions that create dirty state
   if (!actionsToIntercept.includes(action.type)) return result;
 
-  const { itemUid, folderUid, collectionUid } = action.payload;
-  const interval = autoSave.interval;
-
-  // Determine what to save based on what IDs are present
-  let key, save;
-
-  if (itemUid) {
-    // Request change
-    key = `request-${itemUid}`;
-    save = () => dispatch(saveRequest(itemUid, collectionUid, true));
-  } else if (folderUid) {
-    // Folder change
-    key = `folder-${folderUid}`;
-    save = () => dispatch(saveFolderRoot(collectionUid, folderUid, true));
-  } else if (collectionUid) {
-    // Collection change
-    key = `collection-${collectionUid}`;
-    save = () => dispatch(saveCollectionSettings(collectionUid, null, true));
-  }
-
-  if (key && save) {
-    scheduleAutoSave(key, save, interval);
+  const handler = determineSaveHandler(action.type, action.payload, dispatch, getState);
+  if (handler) {
+    scheduleAutoSave(handler.key, handler.save, autoSave.interval);
   }
 
   return result;

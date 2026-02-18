@@ -19,7 +19,7 @@ import { Tooltip } from 'react-tooltip';
 import { getGlobalEnvironmentVariables } from 'utils/collections';
 import Button from 'ui/Button';
 
-const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentVariables, collection }) => {
+const EnvironmentVariables = ({ environment, setIsModified, collection, searchQuery = '' }) => {
   const dispatch = useDispatch();
   const { storedTheme } = useTheme();
   const { globalEnvironments, activeGlobalEnvironmentUid, globalEnvironmentDraft } = useSelector(

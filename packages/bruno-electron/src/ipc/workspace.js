@@ -5,7 +5,7 @@ const archiver = require('archiver');
 const extractZip = require('extract-zip');
 const { ipcMain, dialog } = require('electron');
 const isDev = require('electron-is-dev');
-const { createDirectory, sanitizeName } = require('../utils/filesystem');
+const { createDirectory, sanitizeName, writeFile, DEFAULT_GITIGNORE } = require('../utils/filesystem');
 const yaml = require('js-yaml');
 const LastOpenedWorkspaces = require('../store/last-opened-workspaces');
 const { defaultWorkspaceManager } = require('../store/default-workspace');
@@ -86,6 +86,7 @@ const registerWorkspaceIpc = (mainWindow, workspaceWatcher) => {
         const workspaceConfig = createWorkspaceConfig(workspaceName);
 
         await writeWorkspaceConfig(dirPath, workspaceConfig);
+        await writeFile(path.join(dirPath, '.gitignore'), DEFAULT_GITIGNORE);
 
         lastOpenedWorkspaces.add(dirPath);
 
@@ -210,15 +211,17 @@ const registerWorkspaceIpc = (mainWindow, workspaceWatcher) => {
 
       const specs = workspaceConfig.specs || [];
 
-      const resolvedSpecs = specs.map((spec) => {
-        if (spec.path && !path.isAbsolute(spec.path)) {
-          return {
-            ...spec,
-            path: path.join(workspacePath, spec.path)
-          };
-        }
-        return spec;
-      });
+      const resolvedSpecs = specs
+        .map((spec) => {
+          if (spec.path && !path.isAbsolute(spec.path)) {
+            return {
+              ...spec,
+              path: path.join(workspacePath, spec.path)
+            };
+          }
+          return spec;
+        })
+        .filter((spec) => spec.path && fs.existsSync(spec.path));
 
       return resolvedSpecs;
     } catch (error) {

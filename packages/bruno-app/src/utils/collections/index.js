@@ -115,6 +115,9 @@ export const findParentItemInCollectionByPathname = (collection, pathname) => {
 };
 
 export const findItemInCollection = (collection, itemUid) => {
+  if (!collection || !collection.items) {
+    return null;
+  }
   let flattenedItems = flattenItems(collection.items);
 
   return findItem(flattenedItems, itemUid);
@@ -288,6 +291,11 @@ export const transformCollectionToSaveToExportAsFile = (collection, options = {}
   const copyItems = (sourceItems, destItems) => {
     each(sourceItems, (si) => {
       if (!isItemAFolder(si) && !isItemARequest(si) && si.type !== 'js') {
+        return;
+      }
+
+      // Skip transient requests
+      if (si.isTransient) {
         return;
       }
 
@@ -1156,7 +1164,7 @@ const getPathParams = (item) => {
 export const getTotalRequestCountInCollection = (collection) => {
   let count = 0;
   each(collection.items, (item) => {
-    if (isItemARequest(item)) {
+    if (isItemARequest(item) && !item.isTransient) {
       count++;
     } else if (isItemAFolder(item)) {
       count += getTotalRequestCountInCollection(item);
@@ -1174,7 +1182,14 @@ export const getAllVariables = (collection, item) => {
   const pathParams = getPathParams(item);
   const { globalEnvironmentVariables = {} } = collection;
 
-  const { processEnvVariables = {}, runtimeVariables = {}, promptVariables = {} } = collection;
+  const { processEnvVariables = {}, runtimeVariables = {}, promptVariables = {}, workspaceProcessEnvVariables = {} } = collection;
+
+  // Merge workspace and collection processEnvVariables (collection takes priority)
+  const mergedProcessEnvVariables = {
+    ...workspaceProcessEnvVariables,
+    ...processEnvVariables
+  };
+
   const mergedVariables = {
     ...folderVariables,
     ...requestVariables,
@@ -1216,7 +1231,7 @@ export const getAllVariables = (collection, item) => {
     maskedEnvVariables: uniqueMaskedVariables,
     process: {
       env: {
-        ...processEnvVariables
+        ...mergedProcessEnvVariables
       }
     }
   };
@@ -1458,7 +1473,7 @@ export const getRequestItemsForCollectionRun = ({ recursive, items = [], tags })
   }
 
   const requestTypes = ['http-request', 'graphql-request'];
-  requestItems = requestItems.filter((request) => requestTypes.includes(request.type));
+  requestItems = requestItems.filter((request) => requestTypes.includes(request.type) && !request.isTransient);
 
   if (tags && tags.include && tags.exclude) {
     const includeTags = tags.include ? tags.include : [];

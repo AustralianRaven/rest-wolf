@@ -41,6 +41,7 @@ const registerPreferencesIpc = require('./ipc/preferences');
 const registerSystemMonitorIpc = require('./ipc/system-monitor');
 const registerWorkspaceIpc = require('./ipc/workspace');
 const registerApiSpecIpc = require('./ipc/apiSpec');
+const registerGitIpc = require('./ipc/git');
 const collectionWatcher = require('./app/collection-watcher');
 const WorkspaceWatcher = require('./app/workspace-watcher');
 const ApiSpecWatcher = require('./app/apiSpecsWatcher');
@@ -91,31 +92,65 @@ const isLinux = process.platform === 'linux';
 let mainWindow;
 let appProtocolUrl;
 
-// Register custom protocol handler (must be called before app is ready)
-// In dev mode, we need to pass the Electron executable path and script path
-app.setAsDefaultProtocolClient('bruno');
-if (os.platform() === 'linux') {
-  try {
-    execSync('xdg-mime default bruno.desktop x-scheme-handler/bruno');
-  } catch (err) {}
-}
+// Helper function to focus and restore the main window
+const focusMainWindow = () => {
+  if (mainWindow) {
+    app.focus({ steal: true });
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.focus();
+  }
+};
 
+// Parse protocol URL from command line arguments (if any)
 appProtocolUrl = getAppProtocolUrlFromArgv(process.argv);
 
-// Handle protocol URLs (macOS)
-if (process.platform === 'darwin') {
-  app.on('open-url', (event, url) => {
-    event.preventDefault();
-    appProtocolUrl = url || appProtocolUrl;
-    handleAppProtocolUrl(appProtocolUrl, mainWindow);
-  });
-}
+// Single instance lock - ensures only one instance of Bruno runs at a time (enabled by default)
+const useSingleInstance = process.env.DISABLE_SINGLE_INSTANCE !== 'true';
+const gotTheLock = useSingleInstance ? app.requestSingleInstanceLock() : true;
 
-// Handle protocol URLs when app is already running (Windows/Linux)
-if (process.platform === 'win32' || process.platform === 'linux') {
-  app.on('second-instance', (event, argv) => {
-    appProtocolUrl = getAppProtocolUrlFromArgv(argv) || appProtocolUrl;
-    handleAppProtocolUrl(appProtocolUrl, mainWindow);
+if (useSingleInstance && !gotTheLock) {
+  // Another instance is already running, quit immediately
+  app.quit();
+} else {
+  // This is the primary instance (or single instance is disabled)
+
+  // Try to remove any existing registrations
+  app.removeAsDefaultProtocolClient('bruno');
+  // Register as default handler for `bruno://` protocol URLs
+  app.setAsDefaultProtocolClient('bruno');
+
+  if (isLinux) {
+    try {
+      execSync('xdg-mime default bruno.desktop x-scheme-handler/bruno');
+    } catch (err) {}
+  }
+
+  // Handle protocol URLs for MacOS
+  if (isMac) {
+    app.on('open-url', (event, url) => {
+      event.preventDefault();
+      if (url) {
+        if (mainWindow) {
+          focusMainWindow();
+          handleAppProtocolUrl(url);
+        } else {
+          // Store for handling after window is ready
+          appProtocolUrl = url;
+        }
+      }
+    });
+  }
+
+  // Handle second instance attempts - focus primary window on all platforms
+  app.on('second-instance', (event, commandLine) => {
+    focusMainWindow();
+    // Extract and handle protocol URL from the second instance attempt
+    const url = getAppProtocolUrlFromArgv(commandLine);
+    if (url) {
+      handleAppProtocolUrl(url);
+    }
   });
 }
 
@@ -137,6 +172,12 @@ app.on('ready', async () => {
       console.error('An error occurred while loading extensions: ', err);
     }
   }
+
+  // Initialize system proxy cache early (non-blocking)
+  const { initializeSystemProxy } = require('./store/system-proxy');
+  initializeSystemProxy().catch((err) => {
+    console.warn('Failed to initialize system proxy cache:', err);
+  });
 
   Menu.setApplicationMenu(menu);
   const { maximized, x, y, width, height } = loadWindowState();
@@ -193,6 +234,50 @@ app.on('ready', async () => {
     return mainWindow.isMaximized();
   });
 
+  ipcMain.handle('renderer:open-preferences', () => {
+    ipcMain.emit('main:open-preferences');
+  });
+
+  ipcMain.handle('renderer:toggle-devtools', () => {
+    mainWindow.webContents.toggleDevTools();
+  });
+
+  ipcMain.handle('renderer:reset-zoom', () => {
+    mainWindow.webContents.setZoomLevel(0);
+  });
+
+  ipcMain.handle('renderer:zoom-in', () => {
+    const currentZoom = mainWindow.webContents.getZoomLevel();
+    mainWindow.webContents.setZoomLevel(currentZoom + 0.5);
+  });
+
+  ipcMain.handle('renderer:zoom-out', () => {
+    const currentZoom = mainWindow.webContents.getZoomLevel();
+    mainWindow.webContents.setZoomLevel(currentZoom - 0.5);
+  });
+
+  ipcMain.handle('renderer:toggle-fullscreen', () => {
+    mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  });
+
+  ipcMain.handle('renderer:open-docs', () => {
+    ipcMain.emit('main:open-docs');
+  });
+
+  ipcMain.handle('renderer:open-about', () => {
+    const { version } = require('../package.json');
+    const aboutBruno = require('./app/about-bruno');
+    const aboutWindow = new BrowserWindow({
+      width: 350,
+      height: 250,
+      webPreferences: {
+        nodeIntegration: true
+      }
+    });
+    aboutWindow.removeMenu();
+    aboutWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(aboutBruno({ version }))}`);
+  });
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });
@@ -221,9 +306,15 @@ app.on('ready', async () => {
     }
   });
 
+  let boundsTimeout;
   const handleBoundsChange = () => {
     if (!mainWindow.isMaximized()) {
-      saveBounds(mainWindow);
+      if (boundsTimeout) {
+        clearTimeout(boundsTimeout);
+      }
+      boundsTimeout = setTimeout(() => {
+        saveBounds(mainWindow);
+      }, 100);
     }
   };
 
@@ -262,7 +353,7 @@ app.on('ready', async () => {
 
   mainWindow.webContents.once('did-finish-load', () => {
     if (appProtocolUrl) {
-      handleAppProtocolUrl(appProtocolUrl, mainWindow);
+      handleAppProtocolUrl(appProtocolUrl);
     }
   });
 
@@ -315,10 +406,16 @@ app.on('ready', async () => {
   registerNotificationsIpc(mainWindow, collectionWatcher);
   registerFilesystemIpc(mainWindow);
   registerSystemMonitorIpc(mainWindow, systemMonitor);
+  registerGitIpc(mainWindow);
 });
 
 // Quit the app once all windows are closed
 app.on('before-quit', () => {
+  // Release single instance lock to allow other instances to take over
+  if (useSingleInstance && gotTheLock) {
+    app.releaseSingleInstanceLock();
+  }
+
   try {
     cookiesStore.saveCookieJar(true);
   } catch (err) {
