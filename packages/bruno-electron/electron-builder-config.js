@@ -92,7 +92,7 @@ const config = {
     icon: 'resources/icons/png/256x256.png',
     target: [
       {
-        target: 'portable',
+        target: 'nsis',
         arch: ['x64']
       }
     ],
