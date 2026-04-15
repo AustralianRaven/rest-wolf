@@ -72,7 +72,7 @@
     "build:schema-types": "npm run build --workspace=packages/bruno-schema-types",
     "build:electron": "node ./scripts/build-electron.js",
     "build:electron:mac": "./scripts/build-electron.sh mac",
-    "build:electron:win": "./scripts/build-electron.sh win",
+    "build:electron:win": "node ./scripts/build-electron.js",
     "build:electron:linux": "./scripts/build-electron.sh linux",
     "build:electron:deb": "./scripts/build-electron.sh deb",
     "build:electron:rpm": "./scripts/build-electron.sh rpm",
