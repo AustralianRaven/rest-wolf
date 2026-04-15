@@ -28,6 +28,9 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
   const preferences = useSelector((state) => state.app.preferences);
 
   const [isFetchingFromVault, setIsFetchingFromVault] = useState(false);
+  const [vaultSecretName, setVaultSecretName] = useState(
+    () => (environment.variables || []).find((v) => v.name === 'VAULT_SECRET')?.value || ''
+  );
 
   const hasDraftForThisEnv = globalEnvironmentDraft?.environmentUid === environment.uid;
 
@@ -45,7 +48,7 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
   // Initial values based only on saved environment variables (not draft)
   // Draft restoration happens in a separate effect to avoid infinite loops
   const initialValues = React.useMemo(() => {
-    const vars = environment.variables || [];
+    const vars = (environment.variables || []).filter((v) => v.name !== 'VAULT_SECRET');
     return [
       ...vars,
       {
@@ -111,8 +114,11 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
     mountedRef.current = true;
 
     if ((isMount || envChanged) && hasDraftForThisEnv && globalEnvironmentDraft?.variables) {
+      setVaultSecretName(
+        globalEnvironmentDraft.variables.find((v) => v.name === 'VAULT_SECRET')?.value || ''
+      );
       formik.setValues([
-        ...globalEnvironmentDraft.variables,
+        ...globalEnvironmentDraft.variables.filter((v) => v.name !== 'VAULT_SECRET'),
         {
           uid: uuid(),
           name: '',
@@ -122,17 +128,25 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
           enabled: true
         }
       ]);
+    } else if (envChanged) {
+      setVaultSecretName(
+        (environment.variables || []).find((v) => v.name === 'VAULT_SECRET')?.value || ''
+      );
     }
   }, [environment.uid, hasDraftForThisEnv, globalEnvironmentDraft?.variables]);
 
   // Sync draft state to Redux
   React.useEffect(() => {
-    const currentValues = formik.values.filter((variable) => variable.name && variable.name.trim() !== '');
-    const savedValues = environment.variables || [];
+    const currentValues = formik.values.filter(
+      (variable) => variable.name && variable.name.trim() !== '' && variable.name !== 'VAULT_SECRET'
+    );
+    const savedValues = (environment.variables || []).filter((v) => v.name !== 'VAULT_SECRET');
+
+    const savedVaultSecret = (environment.variables || []).find((v) => v.name === 'VAULT_SECRET')?.value || '';
 
     const currentValuesJson = JSON.stringify(currentValues);
     const savedValuesJson = JSON.stringify(savedValues);
-    const hasActualChanges = currentValuesJson !== savedValuesJson;
+    const hasActualChanges = currentValuesJson !== savedValuesJson || vaultSecretName.trim() !== savedVaultSecret;
 
     setIsModified(hasActualChanges);
 
@@ -151,7 +165,7 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
     } else if (hasDraftForThisEnv) {
       dispatch(clearGlobalEnvironmentDraft());
     }
-  }, [formik.values, environment.variables, environment.uid, setIsModified, dispatch, hasDraftForThisEnv, globalEnvironmentDraft?.variables]);
+  }, [formik.values, environment.variables, environment.uid, setIsModified, dispatch, hasDraftForThisEnv, globalEnvironmentDraft?.variables, vaultSecretName]);
 
   const ErrorMessage = ({ name, index }) => {
     const meta = formik.getFieldMeta(name);
@@ -244,10 +258,27 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
   };
 
   const handleSave = () => {
-    const variablesToSave = formik.values.filter((variable) => variable.name && variable.name.trim() !== '');
-    const savedValues = environment.variables || [];
+    const variablesToSave = formik.values.filter(
+      (variable) => variable.name && variable.name.trim() !== '' && variable.name !== 'VAULT_SECRET'
+    );
 
-    const hasChanges = JSON.stringify(variablesToSave) !== JSON.stringify(savedValues);
+    if (vaultSecretName.trim()) {
+      const existingVaultVar = (environment.variables || []).find((v) => v.name === 'VAULT_SECRET');
+      variablesToSave.push({
+        uid: existingVaultVar?.uid || uuid(),
+        name: 'VAULT_SECRET',
+        value: vaultSecretName.trim(),
+        type: 'text',
+        secret: false,
+        enabled: true
+      });
+    }
+    const savedValues = (environment.variables || []).filter((v) => v.name !== 'VAULT_SECRET');
+    const savedVaultSecret = (environment.variables || []).find((v) => v.name === 'VAULT_SECRET')?.value || '';
+
+    const tableChanged = JSON.stringify(variablesToSave.filter((v) => v.name !== 'VAULT_SECRET')) !== JSON.stringify(savedValues);
+    const vaultSecretChanged = vaultSecretName.trim() !== savedVaultSecret;
+    const hasChanges = tableChanged || vaultSecretChanged;
     if (!hasChanges) {
       toast.error('No changes to save');
       return;
@@ -272,7 +303,7 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
       .then(() => {
         toast.success('Changes saved successfully');
         const newValues = [
-          ...variablesToSave,
+          ...variablesToSave.filter((v) => v.name !== 'VAULT_SECRET'),
           {
             uid: uuid(),
             name: '',
@@ -292,7 +323,7 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
   };
 
   const handleReset = () => {
-    const originalVars = environment.variables || [];
+    const originalVars = (environment.variables || []).filter((v) => v.name !== 'VAULT_SECRET');
     const resetValues = [
       ...originalVars,
       {
@@ -305,6 +336,9 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
       }
     ];
     formik.resetForm({ values: resetValues });
+    setVaultSecretName(
+      (environment.variables || []).find((v) => v.name === 'VAULT_SECRET')?.value || ''
+    );
     setIsModified(false);
   };
 
@@ -314,11 +348,8 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
       return;
     }
 
-    // Find VAULT_SECRET variable in current environment
-    const vaultSecretVar = formik.values.find((v) => v.name === 'VAULT_SECRET' && v.value);
-
-    if (!vaultSecretVar) {
-      toast.error('VAULT_SECRET variable is required in the current environment to fetch from vault.');
+    if (!vaultSecretName.trim()) {
+      toast.error('Please enter a Vault Secret name before fetching.');
       return;
     }
 
@@ -327,7 +358,7 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
     try {
       // Call the IPC to fetch from vault
       const result = await window.ipcRenderer.invoke('azure-vault:fetch-secrets', {
-        vaultSecret: vaultSecretVar.value
+        vaultSecret: vaultSecretName.trim()
       });
 
       if (result.success && result.secrets) {
@@ -511,18 +542,35 @@ const EnvironmentVariables = ({ environment, setIsModified, originalEnvironmentV
             Reset
           </Button>
           {preferences.azureVault?.enabled && (
-            <Button
-              type="button"
-              size="sm"
-              color="primary"
-              variant="outline"
-              onClick={handleFetchFromVault}
-              disabled={isFetchingFromVault}
-              data-testid="fetch-from-vault"
-            >
-              <IconDownload size={14} strokeWidth={1.5} className="mr-1" />
-              {isFetchingFromVault ? 'Fetching...' : 'Fetch from Vault'}
-            </Button>
+            <div className="vault-secret-row">
+              <label className="vault-secret-label" htmlFor="vault-secret-input">
+                Vault Secret
+              </label>
+              <input
+                id="vault-secret-input"
+                type="text"
+                className="vault-secret-input mousetrap"
+                placeholder="Secret name"
+                value={vaultSecretName}
+                onChange={(e) => setVaultSecretName(e.target.value)}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck="false"
+              />
+              <Button
+                type="button"
+                size="sm"
+                color="primary"
+                variant="outline"
+                onClick={handleFetchFromVault}
+                disabled={isFetchingFromVault}
+                data-testid="fetch-from-vault"
+              >
+                <IconDownload size={14} strokeWidth={1.5} className="mr-1" />
+                {isFetchingFromVault ? 'Fetching...' : 'Fetch from Vault'}
+              </Button>
+            </div>
           )}
         </div>
       </div>
