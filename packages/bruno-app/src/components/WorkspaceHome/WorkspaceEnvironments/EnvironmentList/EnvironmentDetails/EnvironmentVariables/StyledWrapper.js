@@ -107,6 +107,37 @@ const Wrapper = styled.div`
     display: flex;
     gap: 8px;
   }
+
+  .vault-secret-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .vault-secret-label {
+    font-size: ${(props) => props.theme.font.size.sm};
+    color: ${(props) => props.theme.text};
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  input[type='text'].vault-secret-input {
+    width: 180px;
+    padding: 0.375rem 0.75rem;
+    height: auto;
+    border: 1px solid ${(props) => props.theme.button2.color.primary.bg};
+    border-radius: ${(props) => props.theme.border.radius.base};
+    background-color: transparent;
+    color: ${(props) => props.theme.text};
+    font-size: ${(props) => props.theme.font.size.sm};
+    outline: none;
+    transition: all 0.15s ease;
+
+    &:focus {
+      border-color: ${(props) => props.theme.button2.color.primary.bg};
+      outline: none;
+    }
+  }
 `;
 
 export default Wrapper;

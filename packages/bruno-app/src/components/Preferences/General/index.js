@@ -400,6 +400,7 @@ const General = ({ close }) => {
               onChange={(e) => formik.setFieldValue('azureVault.tenantId', e.target.value)}
               description="Azure Active Directory tenant ID"
               className="w-64"
+              secret
             />
             <SettingsInput
               id="azureVaultClientId"
@@ -408,6 +409,7 @@ const General = ({ close }) => {
               onChange={(e) => formik.setFieldValue('azureVault.clientId', e.target.value)}
               description="Azure application client ID"
               className="w-64"
+              secret
             />
             <SettingsInput
               id="azureVaultClientSecret"
@@ -416,6 +418,7 @@ const General = ({ close }) => {
               onChange={(e) => formik.setFieldValue('azureVault.clientSecret', e.target.value)}
               description="Azure application client secret"
               className="w-64"
+              secret
             />
             <SettingsInput
               id="azureVaultUrl"
