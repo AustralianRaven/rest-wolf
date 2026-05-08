@@ -16,6 +16,14 @@ const config = {
   ],
   files: ['**/*'],
   afterSign: 'notarize.js',
+  publish: [
+    {
+      provider: 'github',
+      owner: 'AustralianRaven',
+      repo: 'rest-wolf',
+      releaseType: 'release'
+    }
+  ],
   mac: {
     artifactName: '${name}_${version}_${arch}_${os}.${ext}',
     category: 'public.app-category.developer-tools',
