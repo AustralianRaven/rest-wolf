@@ -2,6 +2,7 @@ const _ = require('lodash');
 const { getValueString, indentString } = require('./utils');
 
 const envToJson = (json) => {
+  const meta = _.get(json, 'meta', null);
   const variables = _.get(json, 'variables', []);
   const vars = variables
     .filter((variable) => !variable.secret)
@@ -20,13 +21,26 @@ const envToJson = (json) => {
       return indentString(`${prefix}${name}`);
     });
 
+  let metaBlock = '';
+  if (meta && _.isObject(meta) && Object.keys(meta).length) {
+    const lines = Object.entries(meta)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .map(([key, value]) => indentString(`${key}: ${value}`));
+    if (lines.length) {
+      metaBlock = `meta {
+${lines.join('\n')}
+}
+`;
+    }
+  }
+
   if (!variables || !variables.length) {
-    return `vars {
+    return `${metaBlock}vars {
 }
 `;
   }
 
-  let output = '';
+  let output = metaBlock;
   if (vars.length) {
     output += `vars {
 ${vars.join('\n')}

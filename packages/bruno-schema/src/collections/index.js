@@ -16,7 +16,10 @@ const environmentVariablesSchema = Yup.object({
 const environmentSchema = Yup.object({
   uid: uidSchema,
   name: Yup.string().min(1).required('name is required'),
-  variables: Yup.array().of(environmentVariablesSchema).required('variables are required')
+  variables: Yup.array().of(environmentVariablesSchema).required('variables are required'),
+  // authSchema is declared below; Yup.lazy defers resolution until validation time.
+  // eslint-disable-next-line no-use-before-define
+  auth: Yup.lazy(() => authSchema)
 })
   .noUnknown(true)
   .strict();
@@ -331,8 +334,9 @@ const oauth2Schema = Yup.object({
 
 const authSchema = Yup.object({
   mode: Yup.string()
-    .oneOf(['inherit', 'none', 'awsv4', 'basic', 'bearer', 'digest', 'ntlm', 'oauth2', 'wsse', 'apikey'])
+    .oneOf(['inherit', 'inherit-environment', 'named', 'none', 'awsv4', 'basic', 'bearer', 'digest', 'ntlm', 'oauth2', 'wsse', 'apikey'])
     .required('mode is required'),
+  namedAuthModeUid: Yup.string().nullable(),
   awsv4: authAwsV4Schema.nullable(),
   basic: authBasicSchema.nullable(),
   bearer: authBearerSchema.nullable(),
@@ -345,6 +349,16 @@ const authSchema = Yup.object({
   .noUnknown(true)
   .strict()
   .nullable();
+
+const authModeSchema = Yup.object({
+  uid: uidSchema,
+  name: Yup.string().min(1).required('name is required'),
+  auth: authSchema
+})
+  .noUnknown(true)
+  .strict();
+
+const authModesSchema = Yup.array().of(authModeSchema);
 
 const requestParamsSchema = Yup.object({
   uid: uidSchema,
@@ -621,5 +635,7 @@ module.exports = {
   itemSchema,
   environmentSchema,
   environmentsSchema,
+  authModeSchema,
+  authModesSchema,
   collectionSchema
 };

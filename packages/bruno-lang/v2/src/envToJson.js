@@ -12,7 +12,7 @@ const _ = require('lodash');
 // }
 const indentLevel = 4;
 const grammar = ohm.grammar(`Bru {
-  BruEnvFile = (vars | secretvars)*
+  BruEnvFile = (meta | vars | secretvars)*
 
   nl = "\\r"? "\\n"
   st = " " | "\\t"
@@ -43,6 +43,7 @@ const grammar = ohm.grammar(`Bru {
 
   secretvars = "vars:secret" array
   vars = "vars" dictionary
+  meta = "meta" dictionary
 }`);
 
 const mapPairListToKeyValPairs = (pairList = []) => {
@@ -172,6 +173,16 @@ const sem = grammar.createSemantics().addAttribute('ast', {
   },
   _iter(...elements) {
     return elements.map((e) => e.ast);
+  },
+  meta(_1, dictionary) {
+    const pairs = mapPairListToKeyValPairs(dictionary.ast);
+    const meta = {};
+    _.each(pairs, (p) => {
+      meta[p.name] = p.value;
+    });
+    return {
+      meta
+    };
   },
   vars(_1, dictionary) {
     const vars = mapPairListToKeyValPairs(dictionary.ast);

@@ -8,7 +8,7 @@ import WsseAuth from './WsseAuth';
 import NTLMAuth from './NTLMAuth';
 import { updateAuth } from 'providers/ReduxStore/slices/collections';
 import { saveRequest } from 'providers/ReduxStore/slices/collections/actions';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import ApiKeyAuth from './ApiKeyAuth';
 import StyledWrapper from './StyledWrapper';
@@ -29,6 +29,13 @@ const getTreePathFromCollectionToItem = (collection, _item) => {
 const Auth = ({ item, collection }) => {
   const dispatch = useDispatch();
   const authMode = item.draft ? get(item, 'draft.request.auth.mode') : get(item, 'request.auth.mode');
+  const namedUid = item.draft ? get(item, 'draft.request.auth.namedAuthModeUid') : get(item, 'request.auth.namedAuthModeUid');
+  const savedModes = useSelector((s) => s['auth-modes']?.authModes || []);
+  const globalEnvs = useSelector((s) => s.globalEnvironments?.globalEnvironments || []);
+  const activeGlobalUid = useSelector((s) => s.globalEnvironments?.activeGlobalEnvironmentUid);
+  const activeEnvUid = collection.activeEnvironmentUid;
+  const activeEnv = (collection.environments || []).find((e) => e.uid === activeEnvUid)
+    || globalEnvs.find((e) => e.uid === activeGlobalUid);
   const requestTreePath = getTreePathFromCollectionToItem(collection, item);
 
   // Create a request object to pass to the auth components
@@ -108,6 +115,51 @@ const Auth = ({ item, collection }) => {
               <div className="inherit-mode-text">{humanizeRequestAuthMode(source.auth?.mode)}</div>
             </div>
           </>
+        );
+      }
+      case 'named': {
+        const mode = savedModes.find((m) => m.uid === namedUid);
+        return (
+          <div className="mt-2 text-xs">
+            {mode ? (
+              <>
+                Using saved auth: <span className="font-medium">{mode.name}</span> ({humanizeRequestAuthMode(mode.auth?.mode)}).
+                <div className="text-muted mt-1">Edit in Environment Settings &rarr; Auth Modes.</div>
+              </>
+            ) : (
+              <span className="text-red-500">Saved auth (missing).</span>
+            )}
+          </div>
+        );
+      }
+      case 'inherit-environment': {
+        if (!activeEnv) {
+          return <div className="mt-2 text-xs text-muted">No environment selected.</div>;
+        }
+        const envAuth = activeEnv.auth;
+        if (!envAuth || envAuth.mode === 'none' || !envAuth.mode) {
+          return (
+            <div className="mt-2 text-xs">
+              Environment <span className="font-medium">{activeEnv.name}</span> has no auth configured.
+            </div>
+          );
+        }
+        const named = envAuth.mode === 'named' ? savedModes.find((m) => m.uid === envAuth.namedAuthModeUid) : null;
+        return (
+          <div className="mt-2 text-xs">
+            Inheriting from environment <span className="font-medium">{activeEnv.name}</span>:&nbsp;
+            {envAuth.mode === 'named' ? (
+              named ? (
+                <>
+                  <span className="font-medium">{named.name}</span> ({humanizeRequestAuthMode(named.auth?.mode)})
+                </>
+              ) : (
+                <span className="text-red-500">missing saved auth</span>
+              )
+            ) : (
+              humanizeRequestAuthMode(envAuth.mode)
+            )}
+          </div>
         );
       }
     }

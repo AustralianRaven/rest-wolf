@@ -41,13 +41,12 @@ const toOpenCollectionEnvironmentVariables = (variables: BrunoEnvironmentVariabl
   return ocVariables.length > 0 ? ocVariables : undefined;
 };
 
-const stringifyEnvironment = (environment: BrunoEnvironment): string => {
+const stringifyEnvironment = (environment: BrunoEnvironment & { auth?: any }): string => {
   try {
-    const ocEnvironment: Environment = {
+    const ocEnvironment: Environment & { auth?: any } = {
       name: environment.name
     };
 
-    // Convert variables if they exist
     if (environment.variables?.length) {
       const ocVariables = toOpenCollectionEnvironmentVariables(environment.variables);
       if (ocVariables) {
@@ -55,7 +54,11 @@ const stringifyEnvironment = (environment: BrunoEnvironment): string => {
       }
     }
 
-    return stringifyYml(ocEnvironment);
+    if (environment.auth && environment.auth.mode && environment.auth.mode !== 'none') {
+      (ocEnvironment as any).auth = environment.auth;
+    }
+
+    return stringifyYml(ocEnvironment as Environment);
   } catch (error) {
     console.error('Error stringifying environment:', error);
     throw error;

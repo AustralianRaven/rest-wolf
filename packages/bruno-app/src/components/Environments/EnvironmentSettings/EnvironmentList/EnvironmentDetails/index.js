@@ -1,13 +1,108 @@
 import { IconCopy, IconEdit, IconTrash, IconCheck, IconX } from '@tabler/icons';
-import { useState, useRef } from 'react';
-import { useDispatch } from 'react-redux';
+import { useEffect, useState, useRef } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { renameEnvironment } from 'providers/ReduxStore/slices/collections/actions';
+import {
+  addEnvironmentAuthStub,
+  removeEnvironmentAuthStub
+} from 'providers/ReduxStore/slices/collections';
 import { validateName, validateNameError } from 'utils/common/regex';
 import toast from 'react-hot-toast';
 import CopyEnvironment from 'components/Environments/EnvironmentSettings/CopyEnvironment';
 import DeleteEnvironment from 'components/Environments/EnvironmentSettings/DeleteEnvironment';
 import EnvironmentVariables from './EnvironmentVariables';
+import CollectionAuth from 'components/CollectionSettings/Auth';
 import StyledWrapper from './StyledWrapper';
+
+const envAuthStubUid = (environmentUid) => `env-auth:${environmentUid}`;
+
+const EnvironmentAuthPanel = ({ environment, collection, isGlobal }) => {
+  const dispatch = useDispatch();
+  const stubUid = envAuthStubUid(environment.uid);
+  const stub = useSelector((s) => s.collections.collections.find((c) => c.uid === stubUid));
+
+  // Register / refresh the stub whenever the environment's auth changes (eg. the file
+  // watcher updated it). Clean up on unmount.
+  useEffect(() => {
+    dispatch(addEnvironmentAuthStub({
+      uid: stubUid,
+      parentCollectionUid: isGlobal ? null : collection?.uid,
+      environmentUid: environment.uid,
+      isGlobal: !!isGlobal,
+      auth: environment.auth || { mode: 'none' },
+      name: `${environment.name} (env auth)`
+    }));
+    return () => {
+      dispatch(removeEnvironmentAuthStub({ uid: stubUid }));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [environment.uid]);
+
+  // If the underlying env.auth changed externally and there's no draft, refresh the stub.
+  useEffect(() => {
+    if (!stub) return;
+    if (stub.draft) return;
+    const current = stub.root?.request?.auth;
+    const next = environment.auth || { mode: 'none' };
+    if (JSON.stringify(current) !== JSON.stringify(next)) {
+      dispatch(addEnvironmentAuthStub({
+        uid: stubUid,
+        parentCollectionUid: isGlobal ? null : collection?.uid,
+        environmentUid: environment.uid,
+        isGlobal: !!isGlobal,
+        auth: next,
+        name: `${environment.name} (env auth)`
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [environment.auth]);
+
+  if (!stub) {
+    return <div className="text-xs text-muted">Loading auth…</div>;
+  }
+
+  return (
+    <div className="mt-2">
+      <div className="text-xs text-muted mb-2">
+        Auth used by collections/requests that select <span className="font-medium">Inherit from Environment</span>.
+      </div>
+      <CollectionAuth collection={stub} environmentAuthContext hideHeader saveLabel="Save Environment Auth" />
+    </div>
+  );
+};
+
+const EnvironmentTabs = ({ environment, setIsModified, collection }) => {
+  const [tab, setTab] = useState('variables');
+  return (
+    <div className="flex flex-col flex-1" style={{ minHeight: 0 }}>
+      <div className="flex border-b mb-2 flex-shrink-0" style={{ borderColor: 'var(--color-border)' }}>
+        <button
+          className={`px-3 py-2 text-sm ${tab === 'variables' ? 'font-medium border-b-2' : 'text-muted'}`}
+          style={tab === 'variables' ? { borderColor: 'var(--color-primary, currentColor)' } : {}}
+          onClick={() => setTab('variables')}
+        >
+          Variables
+        </button>
+        <button
+          className={`px-3 py-2 text-sm ${tab === 'auth' ? 'font-medium border-b-2' : 'text-muted'}`}
+          style={tab === 'auth' ? { borderColor: 'var(--color-primary, currentColor)' } : {}}
+          onClick={() => setTab('auth')}
+        >
+          Auth
+        </button>
+      </div>
+      <div className="flex flex-col flex-1" style={{ minHeight: 0 }}>
+        {tab === 'variables' ? (
+          <EnvironmentVariables environment={environment} setIsModified={setIsModified} collection={collection} />
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            <EnvironmentAuthPanel environment={environment} collection={collection} isGlobal={false} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const EnvironmentDetails = ({ environment, setIsModified, collection }) => {
   const dispatch = useDispatch();
@@ -175,7 +270,7 @@ const EnvironmentDetails = ({ environment, setIsModified, collection }) => {
       </div>
 
       <div className="content">
-        <EnvironmentVariables environment={environment} setIsModified={setIsModified} collection={collection} />
+        <EnvironmentTabs environment={environment} setIsModified={setIsModified} collection={collection} />
       </div>
     </StyledWrapper>
   );

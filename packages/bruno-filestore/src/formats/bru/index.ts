@@ -96,6 +96,20 @@ export const parseBruRequest = (data: string | any, parsed: boolean = false): an
       (transformedJson.request as any).params = _.get(json, 'params', []);
       transformedJson.request.auth.mode = _.get(json, 'http.auth', 'none');
       transformedJson.request.body.mode = _.get(json, 'http.body', 'none');
+      const namedAuthModeUid = _.get(json, 'http.namedAuthModeUid');
+      if (namedAuthModeUid) {
+        transformedJson.request.auth.namedAuthModeUid = namedAuthModeUid;
+      }
+    }
+
+    // Carry through namedAuthModeUid for grpc/ws if present
+    if (requestType === 'grpc-request') {
+      const uid = _.get(json, 'grpc.namedAuthModeUid');
+      if (uid) transformedJson.request.auth.namedAuthModeUid = uid;
+    }
+    if (requestType === 'ws-request') {
+      const uid = _.get(json, 'ws.namedAuthModeUid');
+      if (uid) transformedJson.request.auth.namedAuthModeUid = uid;
     }
 
     // add oauth2 additional parameters if they exist
@@ -155,6 +169,10 @@ export const stringifyBruRequest = (json: any): string => {
         auth: _.get(json, 'request.auth.mode', 'none'),
         body: _.get(json, 'request.body.mode', 'none')
       };
+      const namedAuthModeUid = _.get(json, 'request.auth.namedAuthModeUid');
+      if (namedAuthModeUid) {
+        bruJson.http.namedAuthModeUid = namedAuthModeUid;
+      }
       bruJson.params = _.get(json, 'request.params', []);
       bruJson.body = _.get(json, 'request.body', {
         mode: 'json',
@@ -167,6 +185,10 @@ export const stringifyBruRequest = (json: any): string => {
         auth: _.get(json, 'request.auth.mode', 'none'),
         body: _.get(json, 'request.body.mode', 'grpc')
       };
+      const grpcNamedAuthModeUid = _.get(json, 'request.auth.namedAuthModeUid');
+      if (grpcNamedAuthModeUid) {
+        bruJson.grpc.namedAuthModeUid = grpcNamedAuthModeUid;
+      }
       // Only add method if it exists
       const method = _.get(json, 'request.method');
       const methodType = _.get(json, 'request.methodType');
@@ -318,11 +340,22 @@ export const parseBruEnvironment = (bru: string): any => {
   try {
     const json = bruToEnvJsonV2(bru);
 
-    // the app env format requires each variable to have a type
-    // this need to be evaluated and safely removed
-    // i don't see it being used in schema validation
     if (json && json.variables && json.variables.length) {
       _.each(json.variables, (v: any) => (v.type = 'text'));
+    }
+
+    // Environment auth is stored as a JSON-encoded string in meta.authJson — see
+    // stringifyBruEnvironment for the rationale (avoids extending the env grammar
+    // with the full auth block taxonomy).
+    if (json?.meta?.authJson) {
+      try {
+        json.auth = JSON.parse(json.meta.authJson);
+      } catch (e) {
+        // ignore malformed
+      }
+    }
+    if (json && json.meta) {
+      delete json.meta;
     }
 
     return json;
@@ -333,7 +366,16 @@ export const parseBruEnvironment = (bru: string): any => {
 
 export const stringifyBruEnvironment = (json: any): string => {
   try {
-    const bru = envJsonToBruV2(json);
+    const out: any = { ...json };
+    delete out.auth;
+    delete out.meta;
+    // Persist auth as a JSON string under meta.authJson. This keeps the env-file grammar
+    // small (no need to define auth, auth:basic, auth:oauth2, ... blocks separately) while
+    // round-tripping the full auth blob without loss.
+    if (json?.auth && json.auth.mode && json.auth.mode !== 'none') {
+      out.meta = { authJson: JSON.stringify(json.auth) };
+    }
+    const bru = envJsonToBruV2(out);
     return bru;
   } catch (error) {
     throw error;

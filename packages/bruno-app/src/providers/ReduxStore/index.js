@@ -7,6 +7,7 @@ import tabsReducer from './slices/tabs';
 import workspaceTabsReducer from './slices/workspaceTabs';
 import notificationsReducer from './slices/notifications';
 import globalEnvironmentsReducer from './slices/global-environments';
+import authModesReducer from './slices/auth-modes';
 import logsReducer from './slices/logs';
 import performanceReducer from './slices/performance';
 import workspacesReducer from './slices/workspaces';
@@ -31,6 +32,7 @@ export const store = configureStore({
     workspaceTabs: workspaceTabsReducer,
     notifications: notificationsReducer,
     globalEnvironments: globalEnvironmentsReducer,
+    'auth-modes': authModesReducer,
     logs: logsReducer,
     performance: performanceReducer,
     workspaces: workspacesReducer,

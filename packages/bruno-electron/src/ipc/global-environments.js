@@ -32,10 +32,10 @@ const registerGlobalEnvironmentsIpc = (mainWindow, workspaceEnvironmentsManager)
     }
   });
 
-  ipcMain.handle('renderer:save-global-environment', async (event, { environmentUid, variables, workspaceUid, workspacePath }) => {
+  ipcMain.handle('renderer:save-global-environment', async (event, { environmentUid, variables, auth, workspaceUid, workspacePath }) => {
     try {
       if (workspacePath && workspaceEnvironmentsManager) {
-        return await workspaceEnvironmentsManager.saveGlobalEnvironmentByPath(workspacePath, { environmentUid, variables });
+        return await workspaceEnvironmentsManager.saveGlobalEnvironmentByPath(workspacePath, { environmentUid, variables, auth });
       }
 
       globalEnvironmentsStore.saveGlobalEnvironment({ environmentUid, variables });

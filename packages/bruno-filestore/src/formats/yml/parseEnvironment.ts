@@ -38,15 +38,19 @@ const toBrunoEnvironmentVariables = (variables: (Variable | SecretVariable)[] | 
 
 const parseEnvironment = (ymlString: string): BrunoEnvironment => {
   try {
-    const ocEnvironment: Environment = parseYml(ymlString);
+    const ocEnvironment: Environment & { auth?: any } = parseYml(ymlString);
 
-    const brunoEnvironment: BrunoEnvironment = {
+    const brunoEnvironment: BrunoEnvironment & { auth?: any } = {
       uid: uuid(),
       name: ocEnvironment.name || 'Untitled Environment',
       variables: toBrunoEnvironmentVariables(ocEnvironment.variables)
     };
 
-    return brunoEnvironment;
+    if (ocEnvironment.auth && typeof ocEnvironment.auth === 'object') {
+      (brunoEnvironment as any).auth = ocEnvironment.auth;
+    }
+
+    return brunoEnvironment as BrunoEnvironment;
   } catch (error) {
     console.error('Error parsing environment:', error);
     throw error;

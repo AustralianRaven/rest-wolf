@@ -66,6 +66,16 @@ export const globalEnvironmentsSlice = createSlice({
         state.activeGlobalEnvironmentUid = null;
       }
     },
+    _setGlobalEnvironmentAuthMode: (state, action) => {
+      const { environmentUid, authModeUid } = action.payload;
+      const env = state.globalEnvironments.find((e) => e?.uid === environmentUid);
+      if (env) env.authModeUid = authModeUid || undefined;
+    },
+    _setGlobalEnvironmentAuth: (state, action) => {
+      const { environmentUid, auth } = action.payload;
+      const env = state.globalEnvironments.find((e) => e?.uid === environmentUid);
+      if (env) env.auth = auth || undefined;
+    },
     _deleteGlobalEnvironment: (state, action) => {
       const { environmentUid: uid } = action.payload;
       if (uid) {
@@ -93,6 +103,8 @@ export const {
   _copyGlobalEnvironment,
   _selectGlobalEnvironment,
   _deleteGlobalEnvironment,
+  _setGlobalEnvironmentAuthMode,
+  _setGlobalEnvironmentAuth,
   setGlobalEnvironmentDraft,
   clearGlobalEnvironmentDraft
 } = globalEnvironmentsSlice.actions;
@@ -215,6 +227,30 @@ export const saveGlobalEnvironment = ({ variables, environmentUid }) => (dispatc
       }))
       .then(() => dispatch(_saveGlobalEnvironment({ environmentUid, variables })))
       .then(resolve)
+      .catch(reject);
+  });
+};
+
+export const setGlobalEnvironmentAuthMode = ({ environmentUid, authModeUid }) => (dispatch, getState) => {
+  return new Promise((resolve, reject) => {
+    const { ipcRenderer } = window;
+    const state = getState();
+    const { workspaceUid, workspacePath } = getWorkspaceContext(state);
+    const env = state.globalEnvironments.globalEnvironments.find((e) => e?.uid === environmentUid);
+    if (!env) return reject(new Error('Environment not found'));
+
+    ipcRenderer
+      .invoke('renderer:save-global-environment', {
+        environmentUid,
+        variables: env.variables || [],
+        authModeUid: authModeUid || undefined,
+        workspaceUid,
+        workspacePath
+      })
+      .then(() => {
+        dispatch(_setGlobalEnvironmentAuthMode({ environmentUid, authModeUid: authModeUid || undefined }));
+        resolve();
+      })
       .catch(reject);
   });
 };

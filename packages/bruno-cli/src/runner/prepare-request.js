@@ -12,7 +12,7 @@ const { getFormattedOauth2Credentials } = require('../utils/oauth2');
 
 const STREAMING_FILE_SIZE_THRESHOLD = 20 * 1024 * 1024; // 20MB
 
-const prepareRequest = async (item = {}, collection = {}) => {
+const prepareRequest = async (item = {}, collection = {}, environment = null) => {
   const request = item?.request;
   const brunoConfig = collection.draft?.brunoConfig ? get(collection, 'draft.brunoConfig', {}) : get(collection, 'brunoConfig', {});
   const collectionPath = collection?.pathname;
@@ -25,7 +25,7 @@ const prepareRequest = async (item = {}, collection = {}) => {
     mergeHeaders(collection, request, requestTreePath);
     mergeScripts(collection, request, requestTreePath, scriptFlow);
     mergeVars(collection, request, requestTreePath);
-    mergeAuth(collection, request, requestTreePath);
+    mergeAuth(collection, request, requestTreePath, environment);
   }
 
   each(get(request, 'headers', []), (h) => {

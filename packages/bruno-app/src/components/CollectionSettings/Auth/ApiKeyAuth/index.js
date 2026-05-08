@@ -10,15 +10,21 @@ import { saveCollectionSettings } from 'providers/ReduxStore/slices/collections/
 import StyledWrapper from './StyledWrapper';
 import { humanizeRequestAPIKeyPlacement } from 'utils/collections';
 
-const ApiKeyAuth = ({ collection }) => {
+const ApiKeyAuth = ({ collection, authData, onAuthChange, onSave }) => {
   const dispatch = useDispatch();
   const { storedTheme } = useTheme();
   const dropdownTippyRef = useRef();
   const onDropdownCreate = (ref) => (dropdownTippyRef.current = ref);
 
-  const apikeyAuth = collection.draft?.root ? get(collection, 'draft.root.request.auth.apikey', {}) : get(collection, 'root.request.auth.apikey', {});
+  const generic = !!onAuthChange;
+  const apikeyAuth = generic
+    ? (authData?.apikey || {})
+    : (collection.draft?.root ? get(collection, 'draft.root.request.auth.apikey', {}) : get(collection, 'root.request.auth.apikey', {}));
 
-  const handleSave = () => dispatch(saveCollectionSettings(collection.uid));
+  const handleSave = () => {
+    if (generic) return onSave?.();
+    return dispatch(saveCollectionSettings(collection.uid));
+  };
 
   const Icon = forwardRef((props, ref) => {
     return (
@@ -30,30 +36,16 @@ const ApiKeyAuth = ({ collection }) => {
   });
 
   const handleAuthChange = (property, value) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'apikey',
-        collectionUid: collection.uid,
-        content: {
-          ...apikeyAuth,
-          [property]: value
-        }
-      })
-    );
+    const next = { ...apikeyAuth, [property]: value };
+    if (generic) return onAuthChange('apikey', next);
+    return dispatch(updateCollectionAuth({ mode: 'apikey', collectionUid: collection.uid, content: next }));
   };
 
   useEffect(() => {
-    !apikeyAuth?.placement
-    && dispatch(
-      updateCollectionAuth({
-        mode: 'apikey',
-        collectionUid: collection.uid,
-        content: {
-          placement: 'header'
-        }
-      })
-    );
-  }, [apikeyAuth]);
+    if (!apikeyAuth?.placement) {
+      handleAuthChange('placement', 'header');
+    }
+  }, [apikeyAuth?.placement]);
 
   return (
     <StyledWrapper className="mt-2 w-full">
@@ -64,7 +56,7 @@ const ApiKeyAuth = ({ collection }) => {
           theme={storedTheme}
           onSave={handleSave}
           onChange={(val) => handleAuthChange('key', val)}
-          collection={collection}
+          collection={generic ? undefined : collection}
           isCompact
         />
       </div>
@@ -76,7 +68,7 @@ const ApiKeyAuth = ({ collection }) => {
           theme={storedTheme}
           onSave={handleSave}
           onChange={(val) => handleAuthChange('value', val)}
-          collection={collection}
+          collection={generic ? undefined : collection}
           isCompact
         />
       </div>

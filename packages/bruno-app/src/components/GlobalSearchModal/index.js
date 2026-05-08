@@ -26,7 +26,7 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
   const debounceTimeoutRef = useRef(null);
   const dispatch = useDispatch();
 
-  const collections = useSelector((state) => state.collections.collections);
+  const collections = useSelector((state) => (state.collections.collections || []).filter((c) => !c.__isAuthMode__));
   const tabs = useSelector((state) => state.tabs.tabs);
   const activeTabUid = useSelector((state) => state.tabs.activeTabUid);
 

@@ -35,11 +35,15 @@ const prepareWsRequest = async (item, collection, environment, runtimeVariables,
 
   const scriptFlow = brunoConfig?.scripts?.flow ?? 'sandwich';
   const requestTreePath = getTreePathFromCollectionToItem(collection, item);
+  const activeEnvironment =
+    (collection?.environments || []).find((e) => e?.uid === collection?.activeEnvironmentUid) ||
+    collection?.activeGlobalEnvironment ||
+    null;
   if (requestTreePath && requestTreePath.length > 0) {
     mergeHeaders(collection, request, requestTreePath);
     mergeScripts(collection, request, requestTreePath, scriptFlow);
     mergeVars(collection, request, requestTreePath);
-    mergeAuth(collection, request, requestTreePath);
+    mergeAuth(collection, request, requestTreePath, activeEnvironment);
     request.globalEnvironmentVariables = collection?.globalEnvironmentVariables;
     request.oauth2CredentialVariables = getFormattedCollectionOauth2Credentials({
       oauth2Credentials: collection?.oauth2Credentials

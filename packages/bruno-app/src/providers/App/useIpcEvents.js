@@ -27,6 +27,7 @@ import toast from 'react-hot-toast';
 import { useDispatch } from 'react-redux';
 import { isElectron } from 'utils/common/platform';
 import { globalEnvironmentsUpdateEvent, updateGlobalEnvironments } from 'providers/ReduxStore/slices/global-environments';
+import { loadAuthModes } from 'providers/ReduxStore/slices/auth-modes';
 import { collectionAddOauth2CredentialsByUrl, updateCollectionLoadingState } from 'providers/ReduxStore/slices/collections/index';
 import { addLog } from 'providers/ReduxStore/slices/logs';
 import { updateSystemResources } from 'providers/ReduxStore/slices/performance';
@@ -41,6 +42,9 @@ const useIpcEvents = () => {
     }
 
     const { ipcRenderer } = window;
+
+    // Load workspace-global named auth modes once on app start
+    dispatch(loadAuthModes()).catch((err) => console.error('Error loading auth modes:', err));
 
     const _collectionTreeUpdated = (type, val) => {
       if (window.__IS_DEV__) {

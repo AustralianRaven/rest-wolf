@@ -352,6 +352,31 @@ const handler = async function (argv) {
 
     const runtimeVariables = {};
     let envVars = {};
+    let activeEnvironment = null;
+
+    // Load workspace-global auth modes if a JSON file is present alongside the collection or workspace.
+    // Search order: collectionPath/auth-modes.json -> collectionPath/.bruno/auth-modes.json
+    try {
+      const { setAuthModes } = require('../utils/collection');
+      const candidatePaths = [
+        path.join(collectionPath, 'auth-modes.json'),
+        path.join(collectionPath, '.bruno', 'auth-modes.json')
+      ];
+      for (const p of candidatePaths) {
+        if (fs.existsSync(p)) {
+          try {
+            const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+            const modes = Array.isArray(parsed) ? parsed : (parsed?.authModes || []);
+            setAuthModes(modes);
+            break;
+          } catch (e) {
+            console.warn(chalk.yellow(`Warning: failed to parse auth-modes file at ${p}: ${e.message}`));
+          }
+        }
+      }
+    } catch (e) {
+      // best-effort
+    }
 
     if (env && envFile) {
       console.error(chalk.red(`Cannot use both --env and --env-file options together`));
@@ -392,11 +417,13 @@ const handler = async function (argv) {
         const envJson = parseEnvironment(envContent, { format: 'yml' });
         envVars = getEnvVars(envJson);
         envVars.__name__ = envFile ? path.basename(envFilePath, fileExt) : env;
+        activeEnvironment = envJson;
       } else {
         const envBruContent = fs.readFileSync(envFilePath, 'utf8').replace(/\r\n/g, '\n');
         const envJson = parseEnvironment(envBruContent);
         envVars = getEnvVars(envJson);
         envVars.__name__ = envFile ? path.basename(envFilePath, '.bru') : env;
+        activeEnvironment = envJson;
       }
     }
 
@@ -618,7 +645,8 @@ const handler = async function (argv) {
             collectionRoot,
             runtime,
             collection,
-            runSingleRequestByPathname
+            runSingleRequestByPathname,
+            activeEnvironment
           );
           resolve(res?.response);
         }
@@ -643,7 +671,8 @@ const handler = async function (argv) {
         collectionRoot,
         runtime,
         collection,
-        runSingleRequestByPathname
+        runSingleRequestByPathname,
+        activeEnvironment
       );
 
       const isLastRun = currentRequestIndex === requestItems.length - 1;

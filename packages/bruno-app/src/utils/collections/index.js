@@ -912,6 +912,14 @@ export const humanizeRequestAuthMode = (mode) => {
       label = 'API Key';
       break;
     }
+    case 'inherit-environment': {
+      label = 'Inherit from Environment';
+      break;
+    }
+    case 'named': {
+      label = 'Saved Auth';
+      break;
+    }
   }
 
   return label;
