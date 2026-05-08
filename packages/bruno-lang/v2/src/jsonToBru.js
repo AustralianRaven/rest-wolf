@@ -40,7 +40,7 @@ const jsonToBru = (json) => {
   }
 
   if (http?.method) {
-    const { method, url, body, auth } = http;
+    const { method, url, body, auth, namedAuthModeUid } = http;
     const standardMethods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace', 'connect']);
 
     const isStandard = standardMethods.has(method);
@@ -54,6 +54,10 @@ const jsonToBru = (json) => {
 
     if (auth?.length) {
       bru += `\n  auth: ${auth}`;
+    }
+
+    if (namedAuthModeUid) {
+      bru += `\n  namedAuthModeUid: ${namedAuthModeUid}`;
     }
 
     bru += `\n}\n\n`;

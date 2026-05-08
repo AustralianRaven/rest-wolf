@@ -9,116 +9,37 @@ import { updateCollectionAuth } from 'providers/ReduxStore/slices/collections';
 import { saveCollectionSettings } from 'providers/ReduxStore/slices/collections/actions';
 import StyledWrapper from './StyledWrapper';
 
-const AwsV4Auth = ({ collection }) => {
+const AwsV4Auth = ({ collection, authData, onAuthChange, onSave }) => {
   const dispatch = useDispatch();
   const { storedTheme } = useTheme();
 
-  const awsv4Auth = collection.draft?.root ? get(collection, 'draft.root.request.auth.awsv4', {}) : get(collection, 'root.request.auth.awsv4', {});
-  const { isSensitive } = useDetectSensitiveField(collection);
-  const { showWarning, warningMessage } = isSensitive(awsv4Auth?.secretAccessKey);
+  const generic = !!onAuthChange;
+  const awsv4Auth = generic
+    ? (authData?.awsv4 || {})
+    : (collection.draft?.root ? get(collection, 'draft.root.request.auth.awsv4', {}) : get(collection, 'root.request.auth.awsv4', {}));
 
-  const handleSave = () => dispatch(saveCollectionSettings(collection.uid));
+  const sensitive = useDetectSensitiveField(generic ? null : collection);
+  const { showWarning, warningMessage } = generic ? { showWarning: false, warningMessage: '' } : sensitive.isSensitive(awsv4Auth?.secretAccessKey);
 
-  const handleAccessKeyIdChange = (accessKeyId) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'awsv4',
-        collectionUid: collection.uid,
-        content: {
-          accessKeyId: accessKeyId || '',
-          secretAccessKey: awsv4Auth.secretAccessKey || '',
-          sessionToken: awsv4Auth.sessionToken || '',
-          service: awsv4Auth.service || '',
-          region: awsv4Auth.region || '',
-          profileName: awsv4Auth.profileName || ''
-        }
-      })
-    );
+  const handleSave = () => {
+    if (generic) return onSave?.();
+    return dispatch(saveCollectionSettings(collection.uid));
   };
 
-  const handleSecretAccessKeyChange = (secretAccessKey) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'awsv4',
-        collectionUid: collection.uid,
-        content: {
-          accessKeyId: awsv4Auth.accessKeyId || '',
-          secretAccessKey: secretAccessKey || '',
-          sessionToken: awsv4Auth.sessionToken || '',
-          service: awsv4Auth.service || '',
-          region: awsv4Auth.region || '',
-          profileName: awsv4Auth.profileName || ''
-        }
-      })
-    );
-  };
+  const buildContent = (override) => ({
+    accessKeyId: awsv4Auth.accessKeyId || '',
+    secretAccessKey: awsv4Auth.secretAccessKey || '',
+    sessionToken: awsv4Auth.sessionToken || '',
+    service: awsv4Auth.service || '',
+    region: awsv4Auth.region || '',
+    profileName: awsv4Auth.profileName || '',
+    ...override
+  });
 
-  const handleSessionTokenChange = (sessionToken) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'awsv4',
-        collectionUid: collection.uid,
-        content: {
-          accessKeyId: awsv4Auth.accessKeyId || '',
-          secretAccessKey: awsv4Auth.secretAccessKey || '',
-          sessionToken: sessionToken || '',
-          service: awsv4Auth.service || '',
-          region: awsv4Auth.region || '',
-          profileName: awsv4Auth.profileName || ''
-        }
-      })
-    );
-  };
-
-  const handleServiceChange = (service) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'awsv4',
-        collectionUid: collection.uid,
-        content: {
-          accessKeyId: awsv4Auth.accessKeyId || '',
-          secretAccessKey: awsv4Auth.secretAccessKey || '',
-          sessionToken: awsv4Auth.sessionToken || '',
-          service: service || '',
-          region: awsv4Auth.region || '',
-          profileName: awsv4Auth.profileName || ''
-        }
-      })
-    );
-  };
-
-  const handleRegionChange = (region) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'awsv4',
-        collectionUid: collection.uid,
-        content: {
-          accessKeyId: awsv4Auth.accessKeyId || '',
-          secretAccessKey: awsv4Auth.secretAccessKey || '',
-          sessionToken: awsv4Auth.sessionToken || '',
-          service: awsv4Auth.service || '',
-          region: region || '',
-          profileName: awsv4Auth.profileName || ''
-        }
-      })
-    );
-  };
-
-  const handleProfileNameChange = (profileName) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'awsv4',
-        collectionUid: collection.uid,
-        content: {
-          accessKeyId: awsv4Auth.accessKeyId || '',
-          secretAccessKey: awsv4Auth.secretAccessKey || '',
-          sessionToken: awsv4Auth.sessionToken || '',
-          service: awsv4Auth.service || '',
-          region: awsv4Auth.region || '',
-          profileName: profileName || ''
-        }
-      })
-    );
+  const update = (override) => {
+    const next = buildContent(override);
+    if (generic) return onAuthChange('awsv4', next);
+    return dispatch(updateCollectionAuth({ mode: 'awsv4', collectionUid: collection.uid, content: next }));
   };
 
   return (
@@ -129,8 +50,8 @@ const AwsV4Auth = ({ collection }) => {
           value={awsv4Auth.accessKeyId || ''}
           theme={storedTheme}
           onSave={handleSave}
-          onChange={(val) => handleAccessKeyIdChange(val)}
-          collection={collection}
+          onChange={(val) => update({ accessKeyId: val || '' })}
+          collection={generic ? undefined : collection}
           isCompact
         />
       </div>
@@ -141,8 +62,8 @@ const AwsV4Auth = ({ collection }) => {
           value={awsv4Auth.secretAccessKey || ''}
           theme={storedTheme}
           onSave={handleSave}
-          onChange={(val) => handleSecretAccessKeyChange(val)}
-          collection={collection}
+          onChange={(val) => update({ secretAccessKey: val || '' })}
+          collection={generic ? undefined : collection}
           isSecret={true}
           isCompact
         />
@@ -155,8 +76,8 @@ const AwsV4Auth = ({ collection }) => {
           value={awsv4Auth.sessionToken || ''}
           theme={storedTheme}
           onSave={handleSave}
-          onChange={(val) => handleSessionTokenChange(val)}
-          collection={collection}
+          onChange={(val) => update({ sessionToken: val || '' })}
+          collection={generic ? undefined : collection}
           isCompact
         />
       </div>
@@ -167,8 +88,8 @@ const AwsV4Auth = ({ collection }) => {
           value={awsv4Auth.service || ''}
           theme={storedTheme}
           onSave={handleSave}
-          onChange={(val) => handleServiceChange(val)}
-          collection={collection}
+          onChange={(val) => update({ service: val || '' })}
+          collection={generic ? undefined : collection}
           isCompact
         />
       </div>
@@ -179,8 +100,8 @@ const AwsV4Auth = ({ collection }) => {
           value={awsv4Auth.region || ''}
           theme={storedTheme}
           onSave={handleSave}
-          onChange={(val) => handleRegionChange(val)}
-          collection={collection}
+          onChange={(val) => update({ region: val || '' })}
+          collection={generic ? undefined : collection}
           isCompact
         />
       </div>
@@ -191,8 +112,8 @@ const AwsV4Auth = ({ collection }) => {
           value={awsv4Auth.profileName || ''}
           theme={storedTheme}
           onSave={handleSave}
-          onChange={(val) => handleProfileNameChange(val)}
-          collection={collection}
+          onChange={(val) => update({ profileName: val || '' })}
+          collection={generic ? undefined : collection}
           isCompact
         />
       </div>

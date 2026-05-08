@@ -217,11 +217,14 @@ const sem = grammar.createSemantics().addAttribute('ast', {
   },
   auth(_1, dictionary) {
     let auth = mapPairListToKeyValPair(dictionary.ast) || {};
-
+    const result = {
+      mode: auth?.mode || 'none'
+    };
+    if (auth?.namedAuthModeUid) {
+      result.namedAuthModeUid = auth.namedAuthModeUid;
+    }
     return {
-      auth: {
-        mode: auth?.mode || 'none'
-      }
+      auth: result
     };
   },
   query(_1, dictionary) {

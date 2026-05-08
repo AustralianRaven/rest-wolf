@@ -48,6 +48,7 @@ const { loadWindowState, saveBounds, saveMaximized } = require('./utils/window')
 const { globalEnvironmentsManager } = require('./store/workspace-environments');
 const registerNotificationsIpc = require('./ipc/notifications');
 const registerGlobalEnvironmentsIpc = require('./ipc/global-environments');
+const registerAuthModesIpc = require('./ipc/auth-modes');
 const { registerAzureVaultIpc } = require('./ipc/azure-vault');
 const TerminalManager = require('./ipc/terminal');
 const { safeParseJSON, safeStringifyJSON } = require('./utils/common');
@@ -307,6 +308,7 @@ app.on('ready', async () => {
   // register all ipc handlers
   registerNetworkIpc(mainWindow);
   registerGlobalEnvironmentsIpc(mainWindow, globalEnvironmentsManager);
+  registerAuthModesIpc(mainWindow);
   registerAzureVaultIpc(mainWindow);
   registerCollectionsIpc(mainWindow, collectionWatcher);
   registerPreferencesIpc(mainWindow, collectionWatcher);

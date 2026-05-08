@@ -47,6 +47,9 @@ import {
   updateActiveConnections,
   saveRequest as _saveRequest,
   saveEnvironment as _saveEnvironment,
+  _setEnvironmentAuthMode,
+  replaceEnvironmentAuthStubAuth,
+  setCollectionEnvironmentAuth,
   saveCollectionDraft,
   saveFolderDraft,
   addVar,
@@ -381,6 +384,7 @@ export const sendCollectionOauth2Request = (collectionUid, itemUid) => (dispatch
       activeGlobalEnvironmentUid
     });
     collectionCopy.globalEnvironmentVariables = globalEnvironmentVariables;
+    collectionCopy.activeGlobalEnvironment = (globalEnvironments || []).find((e) => e?.uid === activeGlobalEnvironmentUid) || null;
 
     const environment = findEnvironmentInCollection(collectionCopy, collection.activeEnvironmentUid);
 
@@ -422,6 +426,7 @@ export const wsConnectOnly = (item, collectionUid) => (dispatch, getState) => {
       activeGlobalEnvironmentUid
     });
     collectionCopy.globalEnvironmentVariables = globalEnvironmentVariables;
+    collectionCopy.activeGlobalEnvironment = (globalEnvironments || []).find((e) => e?.uid === activeGlobalEnvironmentUid) || null;
 
     const environment = findEnvironmentInCollection(collectionCopy, collectionCopy.activeEnvironmentUid);
 
@@ -525,6 +530,7 @@ export const sendRequest = (item, collectionUid) => (dispatch, getState) => {
       activeGlobalEnvironmentUid
     });
     collectionCopy.globalEnvironmentVariables = globalEnvironmentVariables;
+    collectionCopy.activeGlobalEnvironment = (globalEnvironments || []).find((e) => e?.uid === activeGlobalEnvironmentUid) || null;
 
     const requestUid = uuid();
     itemCopy.requestUid = requestUid;
@@ -658,6 +664,7 @@ export const runCollectionFolder
         activeGlobalEnvironmentUid
       });
       collectionCopy.globalEnvironmentVariables = globalEnvironmentVariables;
+    collectionCopy.activeGlobalEnvironment = (globalEnvironments || []).find((e) => e?.uid === activeGlobalEnvironmentUid) || null;
 
       const folder = findItemInCollection(collectionCopy, folderUid);
 
@@ -1532,6 +1539,7 @@ export const loadGrpcMethodsFromReflection = (item, collectionUid, url) => async
       activeGlobalEnvironmentUid
     });
     collectionCopy.globalEnvironmentVariables = globalEnvironmentVariables;
+    collectionCopy.activeGlobalEnvironment = (globalEnvironments || []).find((e) => e?.uid === activeGlobalEnvironmentUid) || null;
     const environment = findEnvironmentInCollection(collectionCopy, collectionCopy.activeEnvironmentUid);
     const runtimeVariables = collectionCopy.runtimeVariables;
 
@@ -1578,6 +1586,7 @@ export const generateGrpcurlCommand = (item, collectionUid) => async (dispatch, 
       activeGlobalEnvironmentUid
     });
     collectionCopy.globalEnvironmentVariables = globalEnvironmentVariables;
+    collectionCopy.activeGlobalEnvironment = (globalEnvironments || []).find((e) => e?.uid === activeGlobalEnvironmentUid) || null;
     const environment = findEnvironmentInCollection(collectionCopy, collectionCopy.activeEnvironmentUid);
     const runtimeVariables = collectionCopy.runtimeVariables;
 
@@ -1732,6 +1741,94 @@ export const deleteEnvironment = (environmentUid, collectionUid) => (dispatch, g
     const { ipcRenderer } = window;
     ipcRenderer
       .invoke('renderer:delete-environment', collection.pathname, environment.name)
+      .then(resolve)
+      .catch(reject);
+  });
+};
+
+/**
+ * Persist an environment-auth stub-collection's draft to disk.
+ * The stub carries: parentCollectionUid (or null for global), environmentUid, isGlobalEnvironment.
+ */
+export const saveEnvironmentAuthFromStub = ({ uid }) => (dispatch, getState) => {
+  return new Promise((resolve, reject) => {
+    const { ipcRenderer } = window;
+    const state = getState();
+    const stub = state.collections.collections.find((c) => c.__isEnvironmentAuth__ && c.uid === uid);
+    if (!stub) return reject(new Error('Environment auth stub not found'));
+    const auth = stub.draft?.root?.request?.auth || stub.root?.request?.auth || { mode: 'none' };
+
+    if (stub.isGlobalEnvironment) {
+      const env = state.globalEnvironments.globalEnvironments.find((e) => e?.uid === stub.environmentUid);
+      if (!env) return reject(new Error('Global environment not found'));
+      const { workspaces } = state;
+      const workspace = workspaces?.workspaces?.find((w) => w.uid === workspaces.activeWorkspaceUid);
+      const workspacePath = workspace?.pathname;
+      const workspaceUid = workspace?.uid;
+      ipcRenderer
+        .invoke('renderer:save-global-environment', {
+          environmentUid: stub.environmentUid,
+          variables: env.variables || [],
+          auth,
+          workspaceUid,
+          workspacePath
+        })
+        .then(() => {
+          dispatch({
+            type: 'global-environments/_setGlobalEnvironmentAuth',
+            payload: { environmentUid: stub.environmentUid, auth }
+          });
+          dispatch(replaceEnvironmentAuthStubAuth({ uid, auth }));
+          resolve();
+        })
+        .catch(reject);
+    } else {
+      const collection = findCollectionByUid(state.collections.collections, stub.parentCollectionUid);
+      if (!collection) return reject(new Error('Parent collection not found'));
+      const environment = findEnvironmentInCollection(collection, stub.environmentUid);
+      if (!environment) return reject(new Error('Environment not found'));
+
+      const envForSave = cloneDeep(environment);
+      envForSave.auth = auth;
+
+      environmentSchema
+        .validate(envForSave)
+        .then(() => ipcRenderer.invoke('renderer:save-environment', collection.pathname, envForSave))
+        .then(() => {
+          dispatch(setCollectionEnvironmentAuth({
+            collectionUid: collection.uid,
+            environmentUid: environment.uid,
+            auth
+          }));
+          dispatch(replaceEnvironmentAuthStubAuth({ uid, auth }));
+          resolve();
+        })
+        .catch(reject);
+    }
+  });
+};
+
+export const setEnvironmentAuthMode = (environmentUid, authModeUid, collectionUid) => (dispatch, getState) => {
+  return new Promise((resolve, reject) => {
+    const state = getState();
+    const collection = findCollectionByUid(state.collections.collections, collectionUid);
+    if (!collection) return reject(new Error('Collection not found'));
+    const collectionCopy = cloneDeep(collection);
+    const environment = findEnvironmentInCollection(collectionCopy, environmentUid);
+    if (!environment) return reject(new Error('Environment not found'));
+
+    environment.authModeUid = authModeUid || undefined;
+
+    const { ipcRenderer } = window;
+    const envForValidation = cloneDeep(environment);
+
+    environmentSchema
+      .validate(environment)
+      .then(() => ipcRenderer.invoke('renderer:save-environment', collection.pathname, envForValidation))
+      .then(() => {
+        dispatch(_saveEnvironment({ variables: environment.variables || [], environmentUid, collectionUid }));
+        dispatch(_setEnvironmentAuthMode({ environmentUid, authModeUid, collectionUid }));
+      })
       .then(resolve)
       .catch(reject);
   });
@@ -2189,6 +2286,36 @@ export const saveCollectionSettings = (collectionUid, brunoConfig = null, silent
   return new Promise((resolve, reject) => {
     if (!collection) {
       return reject(new Error('Collection not found'));
+    }
+
+    // Stub-collection routing: saved auth modes masquerade as collections so the existing
+    // Auth UI can edit them; on save we route to the auth-modes IPC instead of writing
+    // a collection.bru file.
+    if (collection.__isAuthMode__) {
+      const { saveAuthModeFromStub } = require('providers/ReduxStore/slices/auth-modes');
+      return dispatch(saveAuthModeFromStub({ uid: collection.uid }))
+        .then(() => {
+          if (!silent) toast.success('Auth mode saved');
+        })
+        .then(resolve)
+        .catch((err) => {
+          toast.error('Failed to save auth mode');
+          reject(err);
+        });
+    }
+
+    // Same trick for environment auth — the stub holds the env's auth blob, persisted via the
+    // appropriate environment save IPC.
+    if (collection.__isEnvironmentAuth__) {
+      return dispatch(saveEnvironmentAuthFromStub({ uid: collection.uid }))
+        .then(() => {
+          if (!silent) toast.success('Environment auth saved');
+        })
+        .then(resolve)
+        .catch((err) => {
+          toast.error('Failed to save environment auth');
+          reject(err);
+        });
     }
 
     const collectionCopy = cloneDeep(collection);

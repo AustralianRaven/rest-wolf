@@ -9,57 +9,26 @@ import { updateCollectionAuth } from 'providers/ReduxStore/slices/collections';
 import { saveCollectionSettings } from 'providers/ReduxStore/slices/collections/actions';
 import StyledWrapper from './StyledWrapper';
 
-const NTLMAuth = ({ collection }) => {
+const NTLMAuth = ({ collection, authData, onAuthChange, onSave }) => {
   const dispatch = useDispatch();
   const { storedTheme } = useTheme();
 
-  const ntlmAuth = collection.draft?.root ? get(collection, 'draft.root.request.auth.ntlm', {}) : get(collection, 'root.request.auth.ntlm', {});
-  const { isSensitive } = useDetectSensitiveField(collection);
-  const { showWarning, warningMessage } = isSensitive(ntlmAuth?.password);
+  const generic = !!onAuthChange;
+  const ntlmAuth = generic
+    ? (authData?.ntlm || {})
+    : (collection.draft?.root ? get(collection, 'draft.root.request.auth.ntlm', {}) : get(collection, 'root.request.auth.ntlm', {}));
 
-  const handleSave = () => dispatch(saveCollectionSettings(collection.uid));
+  const sensitive = useDetectSensitiveField(generic ? null : collection);
+  const { showWarning, warningMessage } = generic ? { showWarning: false, warningMessage: '' } : sensitive.isSensitive(ntlmAuth?.password);
 
-  const handleUsernameChange = (username) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'ntlm',
-        collectionUid: collection.uid,
-        content: {
-          username: username || '',
-          password: ntlmAuth.password || '',
-          domain: ntlmAuth.domain || ''
-
-        }
-      })
-    );
+  const handleSave = () => {
+    if (generic) return onSave?.();
+    return dispatch(saveCollectionSettings(collection.uid));
   };
 
-  const handlePasswordChange = (password) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'ntlm',
-        collectionUid: collection.uid,
-        content: {
-          username: ntlmAuth.username || '',
-          password: password || '',
-          domain: ntlmAuth.domain || ''
-        }
-      })
-    );
-  };
-
-  const handleDomainChange = (domain) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'ntlm',
-        collectionUid: collection.uid,
-        content: {
-          username: ntlmAuth.username || '',
-          password: ntlmAuth.password || '',
-          domain: domain || ''
-        }
-      })
-    );
+  const update = (next) => {
+    if (generic) return onAuthChange('ntlm', next);
+    return dispatch(updateCollectionAuth({ mode: 'ntlm', collectionUid: collection.uid, content: next }));
   };
 
   return (
@@ -70,8 +39,8 @@ const NTLMAuth = ({ collection }) => {
           value={ntlmAuth.username || ''}
           theme={storedTheme}
           onSave={handleSave}
-          onChange={(val) => handleUsernameChange(val)}
-          collection={collection}
+          onChange={(val) => update({ username: val || '', password: ntlmAuth.password || '', domain: ntlmAuth.domain || '' })}
+          collection={generic ? undefined : collection}
           isCompact
         />
       </div>
@@ -82,8 +51,8 @@ const NTLMAuth = ({ collection }) => {
           value={ntlmAuth.password || ''}
           theme={storedTheme}
           onSave={handleSave}
-          onChange={(val) => handlePasswordChange(val)}
-          collection={collection}
+          onChange={(val) => update({ username: ntlmAuth.username || '', password: val || '', domain: ntlmAuth.domain || '' })}
+          collection={generic ? undefined : collection}
           isSecret={true}
           isCompact
         />
@@ -96,8 +65,8 @@ const NTLMAuth = ({ collection }) => {
           value={ntlmAuth.domain || ''}
           theme={storedTheme}
           onSave={handleSave}
-          onChange={(val) => handleDomainChange(val)}
-          collection={collection}
+          onChange={(val) => update({ username: ntlmAuth.username || '', password: ntlmAuth.password || '', domain: val || '' })}
+          collection={generic ? undefined : collection}
           isCompact
         />
       </div>

@@ -349,7 +349,33 @@ const getTreePathFromCollectionToItem = (collection, _item) => {
   return path;
 };
 
-const mergeAuth = (collection, request, requestTreePath) => {
+// Global registry of named auth modes for the CLI run. Loaded from a JSON file via setAuthModes().
+let _authModesRegistry = [];
+const setAuthModes = (modes) => {
+  _authModesRegistry = Array.isArray(modes) ? modes : [];
+};
+const findAuthModeByUid = (uid) => {
+  if (!uid) return null;
+  return _authModesRegistry.find((m) => m?.uid === uid) || null;
+};
+
+const resolveAuthRef = (auth, environment, depth = 0) => {
+  if (!auth || !auth.mode) return auth || { mode: 'none' };
+  if (depth > 4) return { mode: 'none' };
+  if (auth.mode === 'named') {
+    const found = findAuthModeByUid(auth.namedAuthModeUid);
+    if (found && found.auth) return resolveAuthRef(found.auth, environment, depth + 1);
+    return { mode: 'none' };
+  }
+  if (auth.mode === 'inherit-environment') {
+    const envAuth = environment?.auth;
+    if (!envAuth || !envAuth.mode || envAuth.mode === 'none') return { mode: 'none' };
+    return resolveAuthRef(envAuth, environment, depth + 1);
+  }
+  return auth;
+};
+
+const mergeAuth = (collection, request, requestTreePath, environment = null) => {
   const collectionRoot = collection?.draft?.root || collection?.root || {};
   let collectionAuth = collectionRoot?.request?.auth || { mode: 'none' };
   let effectiveAuth = collectionAuth;
@@ -366,6 +392,11 @@ const mergeAuth = (collection, request, requestTreePath) => {
 
   if (request.auth && request.auth.mode === 'inherit') {
     request.auth = effectiveAuth;
+  }
+
+  const resolved = resolveAuthRef(request.auth, environment);
+  if (resolved && resolved !== request.auth) {
+    request.auth = resolved;
   }
 };
 
@@ -596,6 +627,8 @@ module.exports = {
   getTreePathFromCollectionToItem,
   createCollectionFromBrunoObject,
   mergeAuth,
+  resolveAuthRef,
+  setAuthModes,
   getAllRequestsInFolder,
   getAllRequestsAtFolderRoot,
   getCallStack

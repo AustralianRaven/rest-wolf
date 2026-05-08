@@ -9,40 +9,26 @@ import { updateCollectionAuth } from 'providers/ReduxStore/slices/collections';
 import { saveCollectionSettings } from 'providers/ReduxStore/slices/collections/actions';
 import StyledWrapper from './StyledWrapper';
 
-const BasicAuth = ({ collection }) => {
+const BasicAuth = ({ collection, authData, onAuthChange, onSave }) => {
   const dispatch = useDispatch();
   const { storedTheme } = useTheme();
 
-  const basicAuth = collection.draft?.root ? get(collection, 'draft.root.request.auth.basic', {}) : get(collection, 'root.request.auth.basic', {});
-  const { isSensitive } = useDetectSensitiveField(collection);
-  const { showWarning, warningMessage } = isSensitive(basicAuth?.password);
+  const generic = !!onAuthChange;
+  const basicAuth = generic
+    ? (authData?.basic || {})
+    : (collection.draft?.root ? get(collection, 'draft.root.request.auth.basic', {}) : get(collection, 'root.request.auth.basic', {}));
 
-  const handleSave = () => dispatch(saveCollectionSettings(collection.uid));
+  const sensitive = useDetectSensitiveField(generic ? null : collection);
+  const { showWarning, warningMessage } = generic ? { showWarning: false, warningMessage: '' } : sensitive.isSensitive(basicAuth?.password);
 
-  const handleUsernameChange = (username) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'basic',
-        collectionUid: collection.uid,
-        content: {
-          username: username || '',
-          password: basicAuth.password || ''
-        }
-      })
-    );
+  const handleSave = () => {
+    if (generic) return onSave?.();
+    return dispatch(saveCollectionSettings(collection.uid));
   };
 
-  const handlePasswordChange = (password) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'basic',
-        collectionUid: collection.uid,
-        content: {
-          username: basicAuth.username || '',
-          password: password || ''
-        }
-      })
-    );
+  const update = (next) => {
+    if (generic) return onAuthChange('basic', next);
+    return dispatch(updateCollectionAuth({ mode: 'basic', collectionUid: collection.uid, content: next }));
   };
 
   return (
@@ -53,8 +39,8 @@ const BasicAuth = ({ collection }) => {
           value={basicAuth.username || ''}
           theme={storedTheme}
           onSave={handleSave}
-          onChange={(val) => handleUsernameChange(val)}
-          collection={collection}
+          onChange={(val) => update({ username: val || '', password: basicAuth.password || '' })}
+          collection={generic ? undefined : collection}
           isCompact
         />
       </div>
@@ -65,8 +51,8 @@ const BasicAuth = ({ collection }) => {
           value={basicAuth.password || ''}
           theme={storedTheme}
           onSave={handleSave}
-          onChange={(val) => handlePasswordChange(val)}
-          collection={collection}
+          onChange={(val) => update({ username: basicAuth.username || '', password: val || '' })}
+          collection={generic ? undefined : collection}
           isSecret={true}
           isCompact
         />

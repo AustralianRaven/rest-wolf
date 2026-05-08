@@ -68,8 +68,12 @@ const jsonToCollectionBru = (json) => {
   }
 
   if (auth && auth.mode) {
+    let body = indentString(`mode: ${auth.mode}`);
+    if (auth.namedAuthModeUid) {
+      body += `\n${indentString(`namedAuthModeUid: ${auth.namedAuthModeUid}`)}`;
+    }
     bru += `auth {
-${indentString(`mode: ${auth.mode}`)}
+${body}
 }
 
 `;

@@ -93,7 +93,8 @@ const runSingleRequest = async function (
   collectionRoot,
   runtime,
   collection,
-  runSingleRequestByPathname
+  runSingleRequestByPathname,
+  activeEnvironment
 ) {
   const { pathname: itemPathname } = item;
   const relativeItemPathname = path.relative(collectionPath, itemPathname);
@@ -124,7 +125,7 @@ const runSingleRequest = async function (
     let preRequestTestResults = [];
     let postResponseTestResults = [];
 
-    request = await prepareRequest(item, collection);
+    request = await prepareRequest(item, collection, activeEnvironment);
 
     // Detect prompt variables before proceeding
     const promptVars = extractPromptVariablesForRequest({ request, collection, envVariables, runtimeVariables, processEnvVars, brunoConfig });

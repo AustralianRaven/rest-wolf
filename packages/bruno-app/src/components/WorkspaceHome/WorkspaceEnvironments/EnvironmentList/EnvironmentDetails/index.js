@@ -1,13 +1,105 @@
 import { IconCopy, IconEdit, IconTrash, IconCheck, IconX } from '@tabler/icons';
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { renameGlobalEnvironment } from 'providers/ReduxStore/slices/global-environments';
+import {
+  addEnvironmentAuthStub,
+  removeEnvironmentAuthStub
+} from 'providers/ReduxStore/slices/collections';
+import CollectionAuth from 'components/CollectionSettings/Auth';
 import { validateName, validateNameError } from 'utils/common/regex';
 import toast from 'react-hot-toast';
 import CopyEnvironment from '../../CopyEnvironment';
 import DeleteEnvironment from '../../DeleteEnvironment';
 import EnvironmentVariables from './EnvironmentVariables';
 import StyledWrapper from './StyledWrapper';
+
+const envAuthStubUid = (environmentUid) => `env-auth:${environmentUid}`;
+
+const GlobalEnvironmentAuthPanel = ({ environment }) => {
+  const dispatch = useDispatch();
+  const stubUid = envAuthStubUid(environment.uid);
+  const stub = useSelector((s) => s.collections.collections.find((c) => c.uid === stubUid));
+
+  useEffect(() => {
+    dispatch(addEnvironmentAuthStub({
+      uid: stubUid,
+      parentCollectionUid: null,
+      environmentUid: environment.uid,
+      isGlobal: true,
+      auth: environment.auth || { mode: 'none' },
+      name: `${environment.name} (env auth)`
+    }));
+    return () => {
+      dispatch(removeEnvironmentAuthStub({ uid: stubUid }));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [environment.uid]);
+
+  useEffect(() => {
+    if (!stub) return;
+    if (stub.draft) return;
+    const current = stub.root?.request?.auth;
+    const next = environment.auth || { mode: 'none' };
+    if (JSON.stringify(current) !== JSON.stringify(next)) {
+      dispatch(addEnvironmentAuthStub({
+        uid: stubUid,
+        parentCollectionUid: null,
+        environmentUid: environment.uid,
+        isGlobal: true,
+        auth: next,
+        name: `${environment.name} (env auth)`
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [environment.auth]);
+
+  if (!stub) {
+    return <div className="text-xs text-muted">Loading auth…</div>;
+  }
+
+  return (
+    <div className="mt-2">
+      <div className="text-xs text-muted mb-2">
+        Authentication used by collections/requests that select <span className="font-medium">Inherit from Environment</span>.
+      </div>
+      <CollectionAuth collection={stub} environmentAuthContext hideHeader saveLabel="Save Authentication" />
+    </div>
+  );
+};
+
+const GlobalEnvironmentTabs = ({ environment, setIsModified, collection }) => {
+  const [tab, setTab] = useState('variables');
+  return (
+    <div className="flex flex-col flex-1" style={{ minHeight: 0 }}>
+      <div className="flex border-b mb-2 flex-shrink-0" style={{ borderColor: 'var(--color-border)' }}>
+        <button
+          className={`px-3 py-2 text-sm ${tab === 'variables' ? 'font-medium border-b-2' : 'text-muted'}`}
+          style={tab === 'variables' ? { borderColor: 'var(--color-primary, currentColor)' } : {}}
+          onClick={() => setTab('variables')}
+        >
+          Variables
+        </button>
+        <button
+          className={`px-3 py-2 text-sm ${tab === 'auth' ? 'font-medium border-b-2' : 'text-muted'}`}
+          style={tab === 'auth' ? { borderColor: 'var(--color-primary, currentColor)' } : {}}
+          onClick={() => setTab('auth')}
+        >
+          Auth
+        </button>
+      </div>
+      <div className="flex flex-col flex-1" style={{ minHeight: 0 }}>
+        {tab === 'variables' ? (
+          <EnvironmentVariables environment={environment} setIsModified={setIsModified} collection={collection} />
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            <GlobalEnvironmentAuthPanel environment={environment} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const EnvironmentDetails = ({ environment, setIsModified, collection }) => {
   const dispatch = useDispatch();
@@ -159,7 +251,7 @@ const EnvironmentDetails = ({ environment, setIsModified, collection }) => {
               </div>
             </>
           ) : (
-            <h2 className="title">{environment.name}</h2>
+            <h3 className="title">{environment.name}</h3>
           )}
         </div>
         {nameError && isRenaming && <div className="title-error">{nameError}</div>}
@@ -176,8 +268,14 @@ const EnvironmentDetails = ({ environment, setIsModified, collection }) => {
         </div>
       </div>
 
+      {!isRenaming && (
+        <div className="header-description">
+          Variables and authentication used by collections that select this environment.
+        </div>
+      )}
+
       <div className="content">
-        <EnvironmentVariables environment={environment} setIsModified={setIsModified} collection={collection} />
+        <GlobalEnvironmentTabs environment={environment} setIsModified={setIsModified} collection={collection} />
       </div>
     </StyledWrapper>
   );

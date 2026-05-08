@@ -259,6 +259,117 @@ export const collectionsSlice = createSlice({
         }
       }
     },
+    /*
+     * Auth-mode stub collections.
+     * Saved auth modes are represented as degenerate "collections" so the existing Auth UI
+     * can edit them with zero changes. They live alongside real collections in this slice
+     * but carry __isAuthMode__: true so iterators can filter them out of the sidebar etc.
+     */
+    addAuthModeStubCollection: (state, action) => {
+      const { uid, name, auth } = action.payload;
+      if (state.collections.find((c) => c.uid === uid)) return;
+      state.collections.push({
+        uid,
+        name,
+        version: '1',
+        __isAuthMode__: true,
+        items: [],
+        environments: [],
+        root: { request: { auth: cloneDeep(auth) || { mode: 'none' } } },
+        runtimeVariables: {},
+        brunoConfig: {}
+      });
+    },
+    removeAuthModeStubCollection: (state, action) => {
+      const { uid } = action.payload;
+      state.collections = state.collections.filter((c) => !(c.__isAuthMode__ && c.uid === uid));
+    },
+    renameAuthModeStubCollection: (state, action) => {
+      const { uid, name } = action.payload;
+      const c = state.collections.find((cc) => cc.__isAuthMode__ && cc.uid === uid);
+      if (c) c.name = name;
+    },
+    replaceAuthModeStubAuth: (state, action) => {
+      // Used after a successful save to commit the draft into the canonical root
+      // and clear the draft.
+      const { uid, auth } = action.payload;
+      const c = state.collections.find((cc) => cc.__isAuthMode__ && cc.uid === uid);
+      if (c) {
+        c.root = c.root || { request: {} };
+        c.root.request = c.root.request || {};
+        c.root.request.auth = cloneDeep(auth);
+        c.draft = null;
+      }
+    },
+    /*
+     * Environment-auth stub collections.
+     * An environment's auth blob is edited via the same Auth UI as a collection root.
+     * We register a transient stub-collection bound to (parentCollectionUid, environmentUid,
+     * isGlobal). saveCollectionSettings detects __isEnvironmentAuth__ and persists via the
+     * appropriate environment save IPC.
+     */
+    addEnvironmentAuthStub: (state, action) => {
+      const { uid, parentCollectionUid, environmentUid, isGlobal, auth, name } = action.payload;
+      const existing = state.collections.find((c) => c.uid === uid);
+      const initialAuth = cloneDeep(auth) || { mode: 'none' };
+      if (existing) {
+        existing.__isEnvironmentAuth__ = true;
+        existing.parentCollectionUid = parentCollectionUid;
+        existing.environmentUid = environmentUid;
+        existing.isGlobalEnvironment = !!isGlobal;
+        existing.root = existing.root || { request: {} };
+        existing.root.request = existing.root.request || {};
+        existing.root.request.auth = initialAuth;
+        existing.draft = null;
+        return;
+      }
+      state.collections.push({
+        uid,
+        name: name || 'Environment Auth',
+        version: '1',
+        __isEnvironmentAuth__: true,
+        parentCollectionUid: parentCollectionUid || null,
+        environmentUid,
+        isGlobalEnvironment: !!isGlobal,
+        items: [],
+        environments: [],
+        root: { request: { auth: initialAuth } },
+        runtimeVariables: {},
+        brunoConfig: {}
+      });
+    },
+    removeEnvironmentAuthStub: (state, action) => {
+      const { uid } = action.payload;
+      state.collections = state.collections.filter((c) => !(c.__isEnvironmentAuth__ && c.uid === uid));
+    },
+    replaceEnvironmentAuthStubAuth: (state, action) => {
+      const { uid, auth } = action.payload;
+      const c = state.collections.find((cc) => cc.__isEnvironmentAuth__ && cc.uid === uid);
+      if (c) {
+        c.root = c.root || { request: {} };
+        c.root.request = c.root.request || {};
+        c.root.request.auth = cloneDeep(auth);
+        c.draft = null;
+      }
+    },
+    setCollectionEnvironmentAuth: (state, action) => {
+      const { collectionUid, environmentUid, auth } = action.payload;
+      const collection = findCollectionByUid(state.collections, collectionUid);
+      if (collection) {
+        const env = findEnvironmentInCollection(collection, environmentUid);
+        if (env) env.auth = cloneDeep(auth) || undefined;
+      }
+    },
+    setEnvironmentAuthMode: (state, action) => {
+      const { environmentUid, authModeUid, collectionUid } = action.payload;
+      const collection = findCollectionByUid(state.collections, collectionUid);
+      if (collection) {
+        const environment = findEnvironmentInCollection(collection, environmentUid);
+        if (environment) {
+          environment.authModeUid = authModeUid || undefined;
+        }
+      }
+    },
     selectEnvironment: (state, action) => {
       const { environmentUid, collectionUid } = action.payload;
       const collection = findCollectionByUid(state.collections, collectionUid);
@@ -908,6 +1019,12 @@ export const collectionsSlice = createSlice({
             case 'apikey':
               item.draft.request.auth.mode = 'apikey';
               item.draft.request.auth.apikey = action.payload.content;
+              break;
+            case 'named':
+              item.draft.request.auth.mode = 'named';
+              if (action.payload.content?.namedAuthModeUid) {
+                item.draft.request.auth.namedAuthModeUid = action.payload.content.namedAuthModeUid;
+              }
               break;
           }
         }
@@ -2009,6 +2126,11 @@ export const collectionsSlice = createSlice({
             break;
           case 'apikey':
             set(collection, 'draft.root.request.auth.apikey', action.payload.content);
+            break;
+          case 'named':
+            if (action.payload.content?.namedAuthModeUid) {
+              set(collection, 'draft.root.request.auth.namedAuthModeUid', action.payload.content.namedAuthModeUid);
+            }
             break;
         }
       }
@@ -3394,6 +3516,15 @@ export const {
   updatedFolderSettingsSelectedTab,
   collectionUnlinkEnvFileEvent,
   saveEnvironment,
+  setEnvironmentAuthMode: _setEnvironmentAuthMode,
+  addAuthModeStubCollection,
+  removeAuthModeStubCollection,
+  renameAuthModeStubCollection,
+  replaceAuthModeStubAuth,
+  addEnvironmentAuthStub,
+  removeEnvironmentAuthStub,
+  replaceEnvironmentAuthStubAuth,
+  setCollectionEnvironmentAuth,
   selectEnvironment,
   newItem,
   deleteItem,

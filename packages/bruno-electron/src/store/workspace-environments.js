@@ -211,7 +211,7 @@ class GlobalEnvironmentsManager {
     }
   }
 
-  async saveGlobalEnvironment(workspacePath, { environmentUid, variables }) {
+  async saveGlobalEnvironment(workspacePath, { environmentUid, variables, auth }) {
     try {
       if (!workspacePath) {
         throw new Error('Workspace path is required');
@@ -223,10 +223,25 @@ class GlobalEnvironmentsManager {
         throw new Error(`Environment file not found for uid: ${environmentUid}`);
       }
 
+      // Preserve auth if not explicitly provided in this save (we don't want a vars-only
+      // save to wipe an environment's auth config).
+      let preservedAuth;
+      try {
+        const existing = await this.parseEnvironmentFile(envFile.filePath, workspacePath);
+        preservedAuth = existing?.auth;
+      } catch (e) {
+        preservedAuth = undefined;
+      }
+
+      const finalAuth = auth !== undefined ? auth : preservedAuth;
+
       const environment = {
         name: envFile.name,
         variables: variables
       };
+      if (finalAuth && finalAuth.mode && finalAuth.mode !== 'none') {
+        environment.auth = finalAuth;
+      }
 
       if (this.envHasSecrets(environment)) {
         environmentSecretsStore.storeEnvSecrets(workspacePath, environment);

@@ -4,6 +4,41 @@ const { getRequestUid, getExampleUid } = require('../cache/requestUids');
 const { uuid } = require('./common');
 const os = require('os');
 const { preferencesUtil } = require('../store/preferences');
+const { authModesStore } = require('../store/auth-modes');
+
+const findAuthModeByUid = (uid) => {
+  if (!uid) return null;
+  try {
+    const all = authModesStore.getAuthModes() || [];
+    return all.find((m) => m?.uid === uid) || null;
+  } catch (err) {
+    return null;
+  }
+};
+
+// Resolve auth into a concrete per-type config.
+// - 'named' looks up the saved auth mode by uid.
+// - 'inherit-environment' uses the active environment's own auth blob (which may itself
+//   be 'named', in which case we resolve that one more hop).
+// Includes a small recursion guard to prevent infinite loops if data is circular.
+const resolveAuthRef = (auth, environment, depth = 0) => {
+  if (!auth || !auth.mode) return auth || { mode: 'none' };
+  if (depth > 4) return { mode: 'none' };
+
+  if (auth.mode === 'named') {
+    const found = findAuthModeByUid(auth.namedAuthModeUid);
+    if (found && found.auth) return resolveAuthRef(found.auth, environment, depth + 1);
+    return { mode: 'none' };
+  }
+
+  if (auth.mode === 'inherit-environment') {
+    const envAuth = environment?.auth;
+    if (!envAuth || !envAuth.mode || envAuth.mode === 'none') return { mode: 'none' };
+    return resolveAuthRef(envAuth, environment, depth + 1);
+  }
+
+  return auth;
+};
 
 const mergeHeaders = (collection, request, requestTreePath) => {
   let headers = new Map();
@@ -615,7 +650,7 @@ const getFormattedCollectionOauth2Credentials = ({ oauth2Credentials = [] }) => 
   return credentialsVariables;
 };
 
-const mergeAuth = (collection, request, requestTreePath) => {
+const mergeAuth = (collection, request, requestTreePath, environment = null) => {
   // Start with collection level auth (always consider collection auth as base)
   const collectionRoot = collection?.draft?.root || collection?.root || {};
   let collectionAuth = get(collectionRoot, 'request.auth', { mode: 'none' });
@@ -627,7 +662,6 @@ const mergeAuth = (collection, request, requestTreePath) => {
     if (i.type === 'folder') {
       const folderRoot = i?.draft || i?.root;
       const folderAuth = get(folderRoot, 'request.auth');
-      // Only consider folders that have a valid auth mode
       if (folderAuth && folderAuth.mode && folderAuth.mode !== 'none' && folderAuth.mode !== 'inherit') {
         effectiveAuth = folderAuth;
         lastFolderWithAuth = i;
@@ -639,10 +673,8 @@ const mergeAuth = (collection, request, requestTreePath) => {
   if (request.auth.mode === 'inherit') {
     request.auth = effectiveAuth;
 
-    // For OAuth2, we need to handle credentials properly
     if (effectiveAuth.mode === 'oauth2') {
       if (lastFolderWithAuth) {
-        // If auth is from folder, add folderUid and clear itemUid
         request.oauth2Credentials = {
           ...request.oauth2Credentials,
           folderUid: lastFolderWithAuth.uid,
@@ -650,7 +682,6 @@ const mergeAuth = (collection, request, requestTreePath) => {
           mode: request.auth.mode
         };
       } else {
-        // If auth is from collection, ensure no folderUid and no itemUid
         request.oauth2Credentials = {
           ...request.oauth2Credentials,
           folderUid: null,
@@ -658,6 +689,20 @@ const mergeAuth = (collection, request, requestTreePath) => {
           mode: request.auth.mode
         };
       }
+    }
+  }
+
+  // Resolve named / inherit-environment references after the inheritance chain
+  const resolved = resolveAuthRef(request.auth, environment);
+  if (resolved && resolved !== request.auth) {
+    request.auth = resolved;
+    if (resolved.mode === 'oauth2') {
+      request.oauth2Credentials = {
+        ...request.oauth2Credentials,
+        folderUid: null,
+        itemUid: null,
+        mode: 'oauth2'
+      };
     }
   }
 };
@@ -734,6 +779,7 @@ module.exports = {
   mergeVars,
   mergeScripts,
   mergeAuth,
+  resolveAuthRef,
   getTreePathFromCollectionToItem,
   flattenItems,
   findItem,

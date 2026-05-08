@@ -9,26 +9,26 @@ import { updateCollectionAuth } from 'providers/ReduxStore/slices/collections';
 import { saveCollectionSettings } from 'providers/ReduxStore/slices/collections/actions';
 import StyledWrapper from './StyledWrapper';
 
-const BearerAuth = ({ collection }) => {
+const BearerAuth = ({ collection, authData, onAuthChange, onSave }) => {
   const dispatch = useDispatch();
   const { storedTheme } = useTheme();
 
-  const bearerToken = collection.draft?.root ? get(collection, 'draft.root.request.auth.bearer.token', '') : get(collection, 'root.request.auth.bearer.token', '');
-  const { isSensitive } = useDetectSensitiveField(collection);
-  const { showWarning, warningMessage } = isSensitive(bearerToken);
+  const generic = !!onAuthChange;
+  const bearerToken = generic
+    ? (authData?.bearer?.token || '')
+    : (collection.draft?.root ? get(collection, 'draft.root.request.auth.bearer.token', '') : get(collection, 'root.request.auth.bearer.token', ''));
 
-  const handleSave = () => dispatch(saveCollectionSettings(collection.uid));
+  const sensitive = useDetectSensitiveField(generic ? null : collection);
+  const { showWarning, warningMessage } = generic ? { showWarning: false, warningMessage: '' } : sensitive.isSensitive(bearerToken);
 
-  const handleTokenChange = (token) => {
-    dispatch(
-      updateCollectionAuth({
-        mode: 'bearer',
-        collectionUid: collection.uid,
-        content: {
-          token: token
-        }
-      })
-    );
+  const handleSave = () => {
+    if (generic) return onSave?.();
+    return dispatch(saveCollectionSettings(collection.uid));
+  };
+
+  const update = (token) => {
+    if (generic) return onAuthChange('bearer', { token });
+    return dispatch(updateCollectionAuth({ mode: 'bearer', collectionUid: collection.uid, content: { token } }));
   };
 
   return (
@@ -39,8 +39,8 @@ const BearerAuth = ({ collection }) => {
           value={bearerToken}
           theme={storedTheme}
           onSave={handleSave}
-          onChange={(val) => handleTokenChange(val)}
-          collection={collection}
+          onChange={(val) => update(val)}
+          collection={generic ? undefined : collection}
           isSecret={true}
           isCompact
         />

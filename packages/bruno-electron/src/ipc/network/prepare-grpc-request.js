@@ -69,8 +69,13 @@ const prepareGrpcRequest = async (item, collection, environment, runtimeVariable
 
   const scriptFlow = collection?.brunoConfig?.scripts?.flow ?? 'sandwich';
   const requestTreePath = getTreePathFromCollectionToItem(collection, item);
+  const activeEnvironment =
+    environment ||
+    (collection?.environments || []).find((e) => e?.uid === collection?.activeEnvironmentUid) ||
+    collection?.activeGlobalEnvironment ||
+    null;
   if (requestTreePath && requestTreePath.length > 0) {
-    mergeAuth(collection, request, requestTreePath);
+    mergeAuth(collection, request, requestTreePath, activeEnvironment);
     mergeHeaders(collection, request, requestTreePath);
     mergeScripts(collection, request, requestTreePath, scriptFlow);
     mergeVars(collection, request, requestTreePath);
