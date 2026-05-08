@@ -1,8 +1,8 @@
 require('dotenv').config({ path: process.env.DOTENV_PATH });
 
 const config = {
-  appId: 'com.usebruno.app',
-  productName: 'Bruno',
+  appId: 'com.rightcrowd.restwolf',
+  productName: 'RestWolf',
   electronVersion: '37.6.1',
   directories: {
     buildResources: 'resources',
@@ -37,9 +37,9 @@ const config = {
     notarize: false,
     protocols: [
       {
-        name: 'Bruno',
+        name: 'RestWolf',
         schemes: [
-          'bruno'
+          'restwolf'
         ]
       }
     ]
@@ -63,13 +63,13 @@ const config = {
     ],
     protocols: [
       {
-        name: 'Bruno',
-        schemes: ['bruno']
+        name: 'RestWolf',
+        schemes: ['restwolf']
       }
     ],
     category: 'Development',
     desktop: {
-      MimeType: 'x-scheme-handler/bruno;'
+      MimeType: 'x-scheme-handler/restwolf;'
     }
   },
   deb: {
@@ -96,7 +96,7 @@ const config = {
         arch: ['x64']
       }
     ],
-    publisherName: 'Bruno Software Inc'
+    publisherName: 'RightCrowd'
   },
   nsis: {
     oneClick: false,
