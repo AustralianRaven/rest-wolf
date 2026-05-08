@@ -93,10 +93,10 @@ let appProtocolUrl;
 
 // Register custom protocol handler (must be called before app is ready)
 // In dev mode, we need to pass the Electron executable path and script path
-app.setAsDefaultProtocolClient('bruno');
+app.setAsDefaultProtocolClient('restwolf');
 if (os.platform() === 'linux') {
   try {
-    execSync('xdg-mime default bruno.desktop x-scheme-handler/bruno');
+    execSync('xdg-mime default restwolf.desktop x-scheme-handler/restwolf');
   } catch (err) {}
 }
 

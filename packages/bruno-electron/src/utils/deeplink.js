@@ -2,7 +2,7 @@ const { handleOauth2ProtocolUrl } = require('./oauth2-protocol-handler');
 
 // Store appProtocolUrl - will be handled in the `did-finish-load` event handler
 const getAppProtocolUrlFromArgv = (argv) => {
-  return argv.find((arg) => arg.startsWith('bruno://'));
+  return argv.find((arg) => arg.startsWith('restwolf://'));
 };
 
 // Handle app protocol URLs
