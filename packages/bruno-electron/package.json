@@ -5,7 +5,7 @@
   "homepage": "https://www.usebruno.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/usebruno/bruno.git"
+    "url": "https://github.com/AustralianRaven/rest-wolf.git"
   },
   "private": true,
   "main": "src/index.js",
@@ -20,6 +20,9 @@
     "dist:deb": "electron-builder --linux deb --config electron-builder-config.js",
     "dist:rpm": "electron-builder --linux rpm --config electron-builder-config.js",
     "dist:snap": "electron-builder --linux snap --config electron-builder-config.js",
+    "publish:win": "electron-builder --win --config electron-builder-config.js --publish always",
+    "publish:mac": "electron-builder --mac --config electron-builder-config.js --publish always",
+    "publish:linux": "electron-builder --linux AppImage --config electron-builder-config.js --publish always",
     "pack": "electron-builder --dir",
     "test": "node --experimental-vm-modules $(npx which jest)"
   },
@@ -32,7 +35,6 @@
     "@aws-sdk/credential-providers": "3.750.0",
     "@azure/identity": "^4.0.0",
     "@azure/keyvault-secrets": "^4.7.0",
-    "archiver": "^7.0.1",
     "@grpc/grpc-js": "^1.13.2",
     "@grpc/proto-loader": "^0.7.13",
     "@lydell/node-pty": "^1.1.0",
@@ -45,6 +47,7 @@
     "@usebruno/requests": "^0.1.0",
     "@usebruno/schema": "0.7.0",
     "about-window": "^1.15.2",
+    "archiver": "^7.0.1",
     "aws4-axios": "^3.3.0",
     "axios": "^1.8.3",
     "axios-ntlm": "^1.4.2",
@@ -56,8 +59,9 @@
     "electron-is-dev": "^2.0.0",
     "electron-notarize": "^1.2.2",
     "electron-store": "^8.1.0",
-    "extract-zip": "^2.0.1",
+    "electron-updater": "^6.8.3",
     "electron-util": "^0.17.2",
+    "extract-zip": "^2.0.1",
     "form-data": "^4.0.0",
     "fs-extra": "^10.1.0",
     "graphql": "^16.6.0",

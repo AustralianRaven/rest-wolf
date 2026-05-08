@@ -53,6 +53,7 @@
   },
   "scripts": {
     "setup": "node ./scripts/setup.js",
+    "release": "node ./scripts/release.js",
     "watch:converters": "npm run watch --workspace=packages/bruno-converters",
     "dev": "node ./scripts/dev.js",
     "watch": "npm run dev:watch",

@@ -58,6 +58,7 @@ const onboardUser = require('./app/onboarding');
 const SystemMonitor = require('./app/system-monitor');
 const { getIsRunningInRosetta } = require('./utils/arch');
 const { handleAppProtocolUrl, getAppProtocolUrlFromArgv } = require('./utils/deeplink');
+const { initAutoUpdater } = require('./app/auto-updater');
 
 const lastOpenedCollections = new LastOpenedCollections();
 const systemMonitor = new SystemMonitor();
@@ -317,6 +318,8 @@ app.on('ready', async () => {
   registerNotificationsIpc(mainWindow, collectionWatcher);
   registerFilesystemIpc(mainWindow);
   registerSystemMonitorIpc(mainWindow, systemMonitor);
+
+  initAutoUpdater(mainWindow);
 });
 
 // Quit the app once all windows are closed

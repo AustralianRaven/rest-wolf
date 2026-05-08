@@ -110,8 +110,9 @@ async function main() {
     // Remove sourcemaps
     await removeSourceMapFiles('packages/bruno-electron/web');
 
-    // Run npm dist command
-    console.log('Building the Electron distribution');
+    // Run npm dist (or publish) command
+    const publish = process.argv.includes('--publish');
+    console.log(publish ? 'Publishing the Electron distribution' : 'Building the Electron distribution');
 
     // Determine the OS and set the appropriate argument
     let osArg;
@@ -123,7 +124,8 @@ async function main() {
       osArg = 'linux';
     }
 
-    await execCommandWithOutput(`npm run dist:${osArg} --workspace=packages/bruno-electron`);
+    const script = publish ? `publish:${osArg}` : `dist:${osArg}`;
+    await execCommandWithOutput(`npm run ${script} --workspace=packages/bruno-electron`);
   } catch (error) {
     console.error('An error occurred:', error);
   }
