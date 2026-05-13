@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { find } from 'lodash';
+import { useSelector } from 'react-redux';
 import StyledWrapper from './StyledWrapper';
 import { IconChevronDown, IconChevronRight, IconCopy, IconCheck } from '@tabler/icons';
 import { getAllVariables } from 'utils/collections/index';
@@ -124,13 +125,38 @@ const ExpiryTimer = ({ expiresIn }) => {
 
 const Oauth2TokenViewer = ({ collection, item, url, credentialsId, handleRun }) => {
   const { uid: collectionUid } = collection;
+  const allCollections = useSelector((s) => s.collections.collections);
 
   const interpolatedUrl = useMemo(() => {
     const variables = getAllVariables(collection, item);
     return interpolate(url, variables);
   }, [collection, item, url]);
 
-  const credentialsData = find(collection?.oauth2Credentials, (creds) => creds?.url == interpolatedUrl && creds?.collectionUid == collectionUid && creds?.credentialsId == credentialsId);
+  // Search the current collection first, then the parent collection (for stubs used in
+  // environment auth / auth-mode views), then any collection with a matching credentialsId.
+  const credentialsData = useMemo(() => {
+    const byUrlAndId = (creds) => creds?.url == interpolatedUrl && creds?.credentialsId == credentialsId;
+    const byId = (creds) => creds?.credentialsId == credentialsId;
+
+    return (
+      find(collection?.oauth2Credentials, byUrlAndId) ||
+      find(collection?.oauth2Credentials, byId) ||
+      (() => {
+        const parentUid = collection?.parentCollectionUid;
+        const parent = parentUid ? allCollections.find((c) => c.uid === parentUid) : null;
+        if (parent) {
+          const hit = find(parent.oauth2Credentials, byUrlAndId) || find(parent.oauth2Credentials, byId);
+          if (hit) return hit;
+        }
+        for (const col of allCollections) {
+          const hit = find(col?.oauth2Credentials, byId);
+          if (hit) return hit;
+        }
+        return null;
+      })()
+    );
+  }, [collection, interpolatedUrl, credentialsId, allCollections]);
+
   const creds = credentialsData?.credentials || {};
 
   return (
