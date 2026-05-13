@@ -6,6 +6,7 @@ const { cleanJson } = require('../utils');
 const { createBruTestResultMethods } = require('../utils/results');
 const { runScriptInNodeVm } = require('../sandbox/node-vm');
 const { executeQuickJsVmAsync } = require('../sandbox/quickjs');
+const { SANDBOX } = require('../utils/sandbox');
 
 class ScriptRuntime {
   constructor(props) {
@@ -33,7 +34,24 @@ class ScriptRuntime {
     const requestVariables = request?.requestVariables || {};
     const promptVariables = request?.promptVariables || {};
     const assertionResults = request?.assertionResults || [];
-    const bru = new Bru(envVariables, runtimeVariables, processEnvVars, collectionPath, collectionVariables, folderVariables, requestVariables, globalEnvironmentVariables, oauth2CredentialVariables, collectionName, promptVariables);
+    const certsAndProxyConfig = request?.certsAndProxyConfig;
+    const scriptPath = request?.pathname;
+    const bru = new Bru({
+      runtime: this.runtime,
+      envVariables,
+      runtimeVariables,
+      processEnvVars,
+      collectionPath,
+      collectionVariables,
+      folderVariables,
+      requestVariables,
+      globalEnvironmentVariables,
+      oauth2CredentialVariables,
+      collectionName,
+      promptVariables,
+      certsAndProxyConfig,
+      requestUrl: request?.url
+    });
     const req = new BrunoRequest(request);
 
     // extend bru with result getter methods
@@ -67,45 +85,67 @@ class ScriptRuntime {
       context.bru.runRequest = runRequestByItemPathname;
     }
 
-    if (this.runtime === 'nodevm') {
-      await runScriptInNodeVm({
-        script,
-        context,
-        collectionPath,
-        scriptingConfig
-      });
-
-      return {
-        request,
-        envVariables: cleanJson(envVariables),
-        runtimeVariables: cleanJson(runtimeVariables),
-        persistentEnvVariables: bru.persistentEnvVariables,
-        globalEnvironmentVariables: cleanJson(globalEnvironmentVariables),
-        results: cleanJson(__brunoTestResults.getResults()),
-        nextRequestName: bru.nextRequest,
-        skipRequest: bru.skipRequest,
-        stopExecution: bru.stopExecution
-      };
-    }
-
-    // default runtime is `quickjs`
-    await executeQuickJsVmAsync({
-      script: script,
-      context: context,
-      collectionPath
-    });
-
-    return {
+    // Helper to build the result object for pre-request scripts
+    // Extracted to avoid duplication across runtime branches
+    const buildRequestScriptResult = () => ({
       request,
       envVariables: cleanJson(envVariables),
       runtimeVariables: cleanJson(runtimeVariables),
       persistentEnvVariables: bru.persistentEnvVariables,
       globalEnvironmentVariables: cleanJson(globalEnvironmentVariables),
+      oauth2CredentialsToReset: bru.oauth2CredentialsToReset,
       results: cleanJson(__brunoTestResults.getResults()),
       nextRequestName: bru.nextRequest,
       skipRequest: bru.skipRequest,
       stopExecution: bru.stopExecution
-    };
+    });
+
+    // Track script errors to attach partial results before re-throwing
+    // This ensures that any test() calls that passed before the error are preserved
+    // Similar pattern to test-runtime.js which already handles this correctly
+    let scriptError = null;
+
+    if (this.runtime === SANDBOX.NODEVM) {
+      try {
+        await runScriptInNodeVm({
+          script,
+          context,
+          collectionPath,
+          scriptingConfig,
+          scriptPath
+        });
+      } catch (error) {
+        scriptError = error;
+      }
+
+      // If script errored, attach partial results so callers can display passed tests
+      // before the error occurred (e.g., 2 tests pass, then script throws)
+      if (scriptError) {
+        scriptError.partialResults = buildRequestScriptResult();
+        throw scriptError;
+      }
+
+      return buildRequestScriptResult();
+    }
+
+    // default runtime is `quickjs`
+    try {
+      await executeQuickJsVmAsync({
+        script: script,
+        context: context,
+        collectionPath,
+        scriptPath
+      });
+    } catch (error) {
+      scriptError = error;
+    }
+
+    if (scriptError) {
+      scriptError.partialResults = buildRequestScriptResult();
+      throw scriptError;
+    }
+
+    return buildRequestScriptResult();
   }
 
   async runResponseScript(
@@ -128,7 +168,24 @@ class ScriptRuntime {
     const requestVariables = request?.requestVariables || {};
     const promptVariables = request?.promptVariables || {};
     const assertionResults = request?.assertionResults || {};
-    const bru = new Bru(envVariables, runtimeVariables, processEnvVars, collectionPath, collectionVariables, folderVariables, requestVariables, globalEnvironmentVariables, oauth2CredentialVariables, collectionName, promptVariables);
+    const certsAndProxyConfig = request?.certsAndProxyConfig;
+    const scriptPath = request?.pathname;
+    const bru = new Bru({
+      runtime: this.runtime,
+      envVariables,
+      runtimeVariables,
+      processEnvVars,
+      collectionPath,
+      collectionVariables,
+      folderVariables,
+      requestVariables,
+      globalEnvironmentVariables,
+      oauth2CredentialVariables,
+      collectionName,
+      promptVariables,
+      certsAndProxyConfig,
+      requestUrl: request?.url
+    });
     const req = new BrunoRequest(request);
     const res = new BrunoResponse(response);
 
@@ -164,45 +221,67 @@ class ScriptRuntime {
       context.bru.runRequest = runRequestByItemPathname;
     }
 
-    if (this.runtime === 'nodevm') {
-      await runScriptInNodeVm({
-        script,
-        context,
-        collectionPath,
-        scriptingConfig
-      });
-
-      return {
-        response,
-        envVariables: cleanJson(envVariables),
-        persistentEnvVariables: cleanJson(bru.persistentEnvVariables),
-        runtimeVariables: cleanJson(runtimeVariables),
-        globalEnvironmentVariables: cleanJson(globalEnvironmentVariables),
-        results: cleanJson(__brunoTestResults.getResults()),
-        nextRequestName: bru.nextRequest,
-        skipRequest: bru.skipRequest,
-        stopExecution: bru.stopExecution
-      };
-    }
-
-    // default runtime is `quickjs`
-    await executeQuickJsVmAsync({
-      script: script,
-      context: context,
-      collectionPath
-    });
-
-    return {
+    // Helper to build the result object for post-response scripts
+    // Extracted to avoid duplication across runtime branches
+    const buildResponseScriptResult = () => ({
       response,
       envVariables: cleanJson(envVariables),
       persistentEnvVariables: cleanJson(bru.persistentEnvVariables),
       runtimeVariables: cleanJson(runtimeVariables),
       globalEnvironmentVariables: cleanJson(globalEnvironmentVariables),
+      oauth2CredentialsToReset: bru.oauth2CredentialsToReset,
       results: cleanJson(__brunoTestResults.getResults()),
       nextRequestName: bru.nextRequest,
       skipRequest: bru.skipRequest,
       stopExecution: bru.stopExecution
-    };
+    });
+
+    // Track script errors to attach partial results before re-throwing
+    // This ensures that any test() calls that passed before the error are preserved
+    // Similar pattern to test-runtime.js which already handles this correctly
+    let scriptError = null;
+
+    if (this.runtime === SANDBOX.NODEVM) {
+      try {
+        await runScriptInNodeVm({
+          script,
+          context,
+          collectionPath,
+          scriptingConfig,
+          scriptPath
+        });
+      } catch (error) {
+        scriptError = error;
+      }
+
+      // If script errored, attach partial results so callers can display passed tests
+      // before the error occurred (e.g., 2 tests pass, then script throws)
+      if (scriptError) {
+        scriptError.partialResults = buildResponseScriptResult();
+        throw scriptError;
+      }
+
+      return buildResponseScriptResult();
+    }
+
+    // default runtime is `quickjs`
+    try {
+      await executeQuickJsVmAsync({
+        script: script,
+        context: context,
+        collectionPath,
+        scriptPath
+      });
+    } catch (error) {
+      scriptError = error;
+    }
+
+    if (scriptError) {
+      scriptError.partialResults = buildResponseScriptResult();
+      throw scriptError;
+    }
+
+    return buildResponseScriptResult();
   }
 }
 

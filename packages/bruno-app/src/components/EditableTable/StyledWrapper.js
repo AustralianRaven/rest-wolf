@@ -1,15 +1,19 @@
 import styled from 'styled-components';
 
 const StyledWrapper = styled.div`
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  overflow: hidden;
+  display: block;
+  width: 100%;
+  isolation: isolate;
+
+  &.is-resizing {
+    cursor: col-resize !important;
+    user-select: none;
+  }
 
   .table-container {
-    overflow-y: auto;
     border-radius: ${(props) => props.theme.border.radius.base};
     border: solid 1px ${(props) => props.theme.border.border0};
+    overflow: clip;
   }
 
   table {
@@ -24,6 +28,7 @@ const StyledWrapper = styled.div`
     color: ${(props) => props.theme.table.thead.color} !important;
     background: ${(props) => props.theme.sidebar.bg};
     user-select: none;
+    overflow: visible;
 
     border: none !important;
 
@@ -34,9 +39,35 @@ const StyledWrapper = styled.div`
       border-bottom: solid 1px ${(props) => props.theme.border.border0};
       border-right: solid 1px ${(props) => props.theme.border.border0};
       vertical-align: middle;
+      position: relative;
+      overflow: visible;
 
       &:last-child {
         border-right: none;
+      }
+
+      .column-name {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding-right: 4px;
+      }
+
+      .resize-handle {
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 4px;
+        height: 100%;
+        cursor: col-resize;
+        background: transparent;
+        z-index: 10;
+
+        &:hover,
+        &.resizing {
+          background: ${(props) => props.theme.colors.accent};
+        }
       }
     }
   }
@@ -48,6 +79,8 @@ const StyledWrapper = styled.div`
 
   tbody {
     tr {
+      height: 35px;
+      max-height: 35px;
       transition: background 0.1s ease;
 
       &:last-child td {
@@ -55,15 +88,45 @@ const StyledWrapper = styled.div`
       }
 
       td {
+        height: 35px;
+        max-height: 35px;
         padding: 1px 10px !important;
         border-top: none !important;
         border-left: none !important;
         border-bottom: solid 1px ${(props) => props.theme.border.border0};
         border-right: solid 1px ${(props) => props.theme.border.border0};
         vertical-align: middle;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        box-sizing: border-box;
 
-        &:last-child {
-          border-right: none;
+        > div:not(.drag-handle) {
+          height: 33px;
+          max-height: 33px;
+          overflow: hidden;
+        }
+
+        /* Handle CodeMirror editors overflow */
+        .cm-editor {
+          max-width: 100%;
+          height: 33px !important;
+          max-height: 33px !important;
+
+          .cm-scroller {
+            overflow: hidden !important;
+            max-height: 33px;
+          }
+
+          .cm-content {
+            max-width: 100%;
+          }
+
+          .cm-line {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
         }
       }
     }
@@ -75,6 +138,7 @@ const StyledWrapper = styled.div`
     text-align: center;
     vertical-align: middle;
     line-height: 1;
+    text-overflow: clip;
 
     input[type='checkbox'] {
       vertical-align: baseline;
@@ -84,6 +148,9 @@ const StyledWrapper = styled.div`
 
   .tooltip-mod {
     max-width: 200px !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    white-space: normal !important;
   }
 
   input[type='text'] {
@@ -127,10 +194,21 @@ const StyledWrapper = styled.div`
   }
 
   .drag-handle {
+    opacity: 0;
+    transition: opacity 0.1s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
     .icon-grip,
     .icon-minus {
       color: ${(props) => props.theme.colors.text.muted};
     }
+  }
+
+  tbody tr:hover .drag-handle,
+  tbody tr.drag-over .drag-handle {
+    opacity: 1;
   }
 
   select {

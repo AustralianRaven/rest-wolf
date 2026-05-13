@@ -49,11 +49,11 @@ export const useInitialResponseFormat = (dataBuffer, headers) => {
 
     // Wait until both content types are available
     if (detectedContentType === null || contentType === undefined) {
-      return { initialFormat: null, initialTab: null };
+      return { initialFormat: null, initialTab: null, contentType: contentType };
     }
 
     const initial = getDefaultResponseFormat(contentType);
-    return { initialFormat: initial.format, initialTab: initial.tab };
+    return { initialFormat: initial.format, initialTab: initial.tab, contentType: contentType };
   }, [dataBuffer, headers]);
 };
 
@@ -66,6 +66,7 @@ export const useResponsePreviewFormatOptions = (dataBuffer, headers) => {
     const byteFormatTypes = ['image', 'video', 'audio', 'pdf', 'zip'];
 
     const isByteFormatType = (contentType) => {
+      if (contentType.toLowerCase().includes('svg')) return false; // SVG is text-based
       return byteFormatTypes.some((type) => contentType.includes(type));
     };
 
@@ -97,10 +98,14 @@ const QueryResult = ({
   headers,
   error,
   selectedFormat, // one of the options in PREVIEW_FORMAT_OPTIONS
-  selectedTab // 'editor' or 'preview'
+  selectedTab, // 'editor' or 'preview'
+  filter,
+  filterExpanded,
+  onFilterChange,
+  onFilterExpandChange,
+  docKey
 }) => {
   const contentType = getContentType(headers);
-  const [filter, setFilter] = useState(null);
   const [showLargeResponse, setShowLargeResponse] = useState(false);
   const { displayedTheme } = useTheme();
 
@@ -133,9 +138,11 @@ const QueryResult = ({
     [data, dataBuffer, selectedFormat, filter, isLargeResponse, showLargeResponse]
   );
 
-  const debouncedResultFilterOnChange = debounce((e) => {
-    setFilter(e.target.value);
-  }, 250);
+  const handleFilterChange = (value) => {
+    if (onFilterChange) {
+      onFilterChange(value);
+    }
+  };
 
   const previewMode = useMemo(() => {
     // Derive preview mode based on selected format
@@ -203,16 +210,23 @@ const QueryResult = ({
                 dataBuffer={dataBuffer}
                 formattedData={formattedData}
                 item={item}
-                contentType={contentType}
+                contentType={detectedContentType ?? contentType}
                 previewMode={previewMode}
                 codeMirrorMode={codeMirrorMode}
                 collection={collection}
                 disableRunEventListener={disableRunEventListener}
                 displayedTheme={displayedTheme}
+                docKey={docKey}
               />
             </div>
             {queryFilterEnabled && (
-              <QueryResultFilter filter={filter} onChange={debouncedResultFilterOnChange} mode={codeMirrorMode} />
+              <QueryResultFilter
+                filter={filter}
+                filterExpanded={filterExpanded}
+                onChange={handleFilterChange}
+                onExpandChange={onFilterExpandChange}
+                mode={codeMirrorMode}
+              />
             )}
           </div>
         </div>

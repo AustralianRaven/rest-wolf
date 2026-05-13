@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import find from 'lodash/find';
 import { useDispatch, useSelector } from 'react-redux';
-import { updateResponsePaneTab, updateResponseFormat, updateResponseViewTab } from 'providers/ReduxStore/slices/tabs';
+import { updateResponsePaneTab, updateResponseFormat, updateResponseViewTab, updateResponseFilter, updateResponseFilterExpanded } from 'providers/ReduxStore/slices/tabs';
 import QueryResult from './QueryResult';
 import Overlay from './Overlay';
 import Placeholder from './Placeholder';
@@ -42,8 +42,11 @@ const ResponsePane = ({ item, collection }) => {
   const focusedTab = find(tabs, (t) => t.uid === activeTabUid);
 
   // Initialize format and tab only once when data loads.
-  const { initialFormat, initialTab } = useInitialResponseFormat(response?.dataBuffer, response?.headers);
+  const { initialFormat, initialTab, contentType } = useInitialResponseFormat(response?.dataBuffer, response?.headers);
   const previewFormatOptions = useResponsePreviewFormatOptions(response?.dataBuffer, response?.headers);
+
+  // Track previous response headers to detect when content-type changes
+  const previousContentRef = useRef(contentType);
 
   const persistedFormat = focusedTab?.responseFormat;
   const persistedViewTab = focusedTab?.responseViewTab;
@@ -56,13 +59,19 @@ const ResponsePane = ({ item, collection }) => {
     if (!focusedTab || initialFormat === null || initialTab === null) {
       return;
     }
-    if (persistedFormat === null) {
+
+    // Check if response headers (content-type) changed using deep comparison
+    const contentTypeChanged = contentType !== previousContentRef.current;
+    if (contentTypeChanged) {
+      previousContentRef.current = contentType;
+    }
+    if (contentTypeChanged || persistedFormat === null) {
       dispatch(updateResponseFormat({ uid: item.uid, responseFormat: initialFormat }));
     }
-    if (persistedViewTab === null) {
+    if (contentTypeChanged || persistedViewTab === null) {
       dispatch(updateResponseViewTab({ uid: item.uid, responseViewTab: initialTab }));
     }
-  }, [initialFormat, initialTab, persistedFormat, persistedViewTab, focusedTab, item.uid, dispatch]);
+  }, [contentType, initialFormat, initialTab, persistedFormat, persistedViewTab, focusedTab, item.uid, dispatch]);
 
   const handleFormatChange = useCallback((newFormat) => {
     dispatch(updateResponseFormat({ uid: item.uid, responseFormat: newFormat }));
@@ -159,6 +168,10 @@ const ResponsePane = ({ item, collection }) => {
             key={item.filename}
             selectedFormat={selectedFormat}
             selectedTab={selectedViewTab}
+            filter={focusedTab?.responseFilter}
+            filterExpanded={focusedTab?.responseFilterExpanded}
+            onFilterChange={(value) => dispatch(updateResponseFilter({ uid: activeTabUid, responseFilter: value }))}
+            onFilterExpandChange={(expanded) => dispatch(updateResponseFilterExpanded({ uid: activeTabUid, responseFilterExpanded: expanded }))}
           />
         );
       }
@@ -166,11 +179,12 @@ const ResponsePane = ({ item, collection }) => {
         return <ResponseHeaders headers={response.headers} />;
       }
       case 'timeline': {
-        return <Timeline collection={collection} item={item} />;
+        return <Timeline collection={collection} item={item} activeTabUid={activeTabUid} />;
       }
       case 'tests': {
         return (
           <TestResults
+            item={item}
             results={item.testResults}
             assertionResults={item.assertionResults}
             preRequestTestResults={item.preRequestTestResults}
@@ -283,26 +297,22 @@ const ResponsePane = ({ item, collection }) => {
           rightContentExpandedWidth={RIGHT_CONTENT_EXPANDED_WIDTH}
         />
       </div>
-      <section
-        className="flex flex-col min-h-0 relative px-4 auto overflow-auto mt-4"
-        style={{
-          flex: '1 1 0',
-          height: hasScriptError && showScriptErrorCard ? 'auto' : '100%'
-        }}
-      >
+      <section className={`response-pane-content ${hasScriptError && showScriptErrorCard ? 'has-script-error' : ''}`}>
         {isLoading ? <Overlay item={item} collection={collection} /> : null}
         {hasScriptError && showScriptErrorCard && (
           <ScriptError
             item={item}
             onClose={() => setShowScriptErrorCard(false)}
+            collection={collection}
           />
         )}
-        <div className="flex-1 overflow-y-auto">
+        <div className="response-tab-content">
           {!item?.response ? (
             focusedTab?.responsePaneTab === 'timeline' && requestTimeline?.length ? (
               <Timeline
                 collection={collection}
                 item={item}
+                activeTabUid={activeTabUid}
               />
             ) : null
           ) : (

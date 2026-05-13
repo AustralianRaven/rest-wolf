@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
+import path from 'utils/common/path';
 import { browseDirectory } from 'providers/ReduxStore/slices/collections/actions';
 import { cloneCollection } from 'providers/ReduxStore/slices/collections/actions';
 import toast from 'react-hot-toast';
@@ -20,7 +21,14 @@ const CloneCollection = ({ onClose, collectionUid }) => {
   const [isEditing, toggleEditing] = useState(false);
   const collection = useSelector((state) => findCollectionByUid(state.collections.collections, collectionUid));
   const preferences = useSelector((state) => state.app.preferences);
-  const defaultLocation = get(preferences, 'general.defaultCollectionLocation', '');
+  const workspaces = useSelector((state) => state.workspaces?.workspaces || []);
+  const workspaceUid = useSelector((state) => state.workspaces?.activeWorkspaceUid);
+  const activeWorkspace = workspaces.find((w) => w.uid === workspaceUid);
+  const isDefaultWorkspace = activeWorkspace?.type === 'default';
+
+  const defaultLocation = isDefaultWorkspace
+    ? get(preferences, 'general.defaultLocation', '')
+    : (activeWorkspace?.pathname ? path.join(activeWorkspace.pathname, 'collections') : '');
   const { name } = collection;
 
   const formik = useFormik({

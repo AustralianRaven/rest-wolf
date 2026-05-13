@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 
-const reporter: any[] = [['list'], ['html']];
+const reporter: any[] = [['list'], ['html'], ['json', { outputFile: 'playwright-report/results.json' }]];
 
 if (process.env.CI) {
   reporter.push(['github']);
@@ -22,8 +22,13 @@ export default defineConfig({
       name: 'default',
       testDir: './tests',
       testIgnore: [
-        'ssl/**' // custom CA certificate tests require separate server setup and certificate generation
+        'ssl/**', // custom CA certificate tests require separate server setup and certificate generation
+        'auth/**' // auth tests have their own project
       ]
+    },
+    {
+      name: 'auth',
+      testDir: './tests/auth'
     },
     {
       name: 'ssl',

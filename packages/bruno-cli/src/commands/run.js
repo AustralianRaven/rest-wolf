@@ -17,6 +17,9 @@ const { parseDotEnv, parseEnvironment } = require('@usebruno/filestore');
 const constants = require('../constants');
 const { findItemInCollection, createCollectionJsonFromPathname, getCallStack, FORMAT_CONFIG } = require('../utils/collection');
 const { hasExecutableTestInScript } = require('../utils/request');
+const { createSkippedFileResults } = require('../utils/run');
+const { sanitizeResultsForReporter } = require('../utils/sanitize-results');
+const { getSystemProxy } = require('@usebruno/requests');
 const command = 'run [paths...]';
 const desc = 'Run one or more requests/folders';
 
@@ -198,13 +201,33 @@ const builder = async (yargs) => {
       description: 'Skip specific headers from the reporter output',
       default: []
     })
+    .option('reporter-skip-request-body', {
+      type: 'boolean',
+      description: 'Omit request body from the reporter output',
+      default: false
+    })
+    .option('reporter-skip-response-body', {
+      type: 'boolean',
+      description: 'Omit response body from the reporter output',
+      default: false
+    })
+    .option('reporter-skip-body', {
+      type: 'boolean',
+      description: 'Omit both request and response bodies from the reporter output',
+      default: false
+    })
     .option('client-cert-config', {
       type: 'string',
       description: 'Path to the Client certificate config file used for securing the connection in the request'
     })
-    .option('--noproxy', {
+    .option('noproxy', {
       type: 'boolean',
       description: 'Disable all proxy settings (both collection-defined and system proxies)',
+      default: false
+    })
+    .option('cache-ssl-session', {
+      type: 'boolean',
+      description: 'Enable SSL session caching — reuses TLS sessions across requests for faster handshakes',
       default: false
     })
     .option('delay', {
@@ -230,6 +253,9 @@ const builder = async (yargs) => {
     .example('$0 run folder -r', 'Run all requests in a folder recursively')
     .example('$0 run request.bru folder', 'Run a request and all requests in a folder')
     .example('$0 run --reporter-skip-all-headers', 'Run all requests in a folder recursively with omitted headers from the reporter output')
+    .example('$0 run --reporter-skip-request-body', 'Run all requests with request bodies omitted from the reporter output')
+    .example('$0 run --reporter-skip-response-body', 'Run all requests with response bodies omitted from the reporter output')
+    .example('$0 run --reporter-skip-body', 'Run all requests with both request and response bodies omitted from the reporter output')
     .example(
       '$0 run --reporter-skip-headers "Authorization"',
       'Run all requests in a folder recursively with skipped headers from the reporter output'
@@ -304,8 +330,12 @@ const handler = async function (argv) {
       bail,
       reporterSkipAllHeaders,
       reporterSkipHeaders,
+      reporterSkipRequestBody,
+      reporterSkipResponseBody,
+      reporterSkipBody,
       clientCertConfig,
       noproxy,
+      cacheSslSession,
       delay,
       tags: includeTags,
       excludeTags,
@@ -378,52 +408,63 @@ const handler = async function (argv) {
       // best-effort
     }
 
-    if (env && envFile) {
-      console.error(chalk.red(`Cannot use both --env and --env-file options together`));
-      process.exit(constants.EXIT_STATUS.ERROR_MALFORMED_ENV_OVERRIDE);
-    }
+    // Helper to load environment variables from a file
+    const loadEnvFromFile = (filePath, nameOverride) => {
+      const fileExt = path.extname(filePath).toLowerCase();
+      let result = {};
 
-    if (envFile || env) {
-      const envExt = FORMAT_CONFIG[collection.format].ext;
-      const envFilePath = envFile
-        ? path.resolve(collectionPath, envFile)
-        : path.join(collectionPath, 'environments', `${env}${envExt}`);
-
-      const envFileExists = await exists(envFilePath);
-      if (!envFileExists) {
-        const errorPath = envFile || `environments/${env}${envExt}`;
-        console.error(chalk.red(`Environment file not found: `) + chalk.dim(errorPath));
-
-        process.exit(constants.EXIT_STATUS.ERROR_ENV_NOT_FOUND);
+      if (fileExt === '.json') {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const parsed = JSON.parse(content);
+        const normalizedEnv = parseEnvironmentJson(parsed);
+        result = getEnvVars(normalizedEnv);
+        const rawName = normalizedEnv?.name;
+        const trimmedName = typeof rawName === 'string' ? rawName.trim() : '';
+        result.__name__ = trimmedName || path.basename(filePath, '.json');
+      } else if (fileExt === '.yml' || fileExt === '.yaml') {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const envJson = parseEnvironment(content, { format: 'yml' });
+        result = getEnvVars(envJson);
+        result.__name__ = nameOverride || path.basename(filePath, fileExt);
+      } else {
+        const content = fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
+        const envJson = parseEnvironment(content, { format: 'bru' });
+        result = getEnvVars(envJson);
+        result.__name__ = nameOverride || path.basename(filePath, '.bru');
       }
 
-      const fileExt = path.extname(envFilePath).toLowerCase();
-      if (fileExt === '.json') {
-        let envJsonContent;
-        try {
-          envJsonContent = fs.readFileSync(envFilePath, 'utf8');
-          const parsed = JSON.parse(envJsonContent);
-          const normalizedEnv = parseEnvironmentJson(parsed);
-          envVars = getEnvVars(normalizedEnv);
-          const rawName = normalizedEnv?.name;
-          const trimmedName = typeof rawName === 'string' ? rawName.trim() : '';
-          envVars.__name__ = trimmedName || path.basename(envFilePath, '.json');
-        } catch (err) {
-          console.error(chalk.red(`Failed to parse Environment JSON: ${err.message}`));
-          process.exit(constants.EXIT_STATUS.ERROR_INVALID_FILE);
-        }
-      } else if (fileExt === '.yml' || fileExt === '.yaml') {
-        const envContent = fs.readFileSync(envFilePath, 'utf8');
-        const envJson = parseEnvironment(envContent, { format: 'yml' });
-        envVars = getEnvVars(envJson);
-        envVars.__name__ = envFile ? path.basename(envFilePath, fileExt) : env;
-        activeEnvironment = envJson;
-      } else {
-        const envBruContent = fs.readFileSync(envFilePath, 'utf8').replace(/\r\n/g, '\n');
-        const envJson = parseEnvironment(envBruContent);
-        envVars = getEnvVars(envJson);
-        envVars.__name__ = envFile ? path.basename(envFilePath, '.bru') : env;
-        activeEnvironment = envJson;
+      return result;
+    };
+
+    // Load --env-file if provided
+    if (envFile) {
+      const envFilePath = path.resolve(collectionPath, envFile);
+      if (!(await exists(envFilePath))) {
+        console.error(chalk.red(`Environment file not found: `) + chalk.dim(envFile));
+        process.exit(constants.EXIT_STATUS.ERROR_ENV_NOT_FOUND);
+      }
+      try {
+        envVars = loadEnvFromFile(envFilePath);
+      } catch (err) {
+        console.error(chalk.red(`Failed to parse environment file: ${err.message}`));
+        process.exit(constants.EXIT_STATUS.ERROR_INVALID_FILE);
+      }
+    }
+
+    // Load --env and merge (collection env takes precedence)
+    if (env) {
+      const envExt = FORMAT_CONFIG[collection.format].ext;
+      const collectionEnvFilePath = path.join(collectionPath, 'environments', `${env}${envExt}`);
+      if (!(await exists(collectionEnvFilePath))) {
+        console.error(chalk.red(`Environment file not found: `) + chalk.dim(`environments/${env}${envExt}`));
+        process.exit(constants.EXIT_STATUS.ERROR_ENV_NOT_FOUND);
+      }
+      try {
+        const collectionEnvVars = loadEnvFromFile(collectionEnvFilePath, env);
+        envVars = { ...envVars, ...collectionEnvVars };
+      } catch (err) {
+        console.error(chalk.red(`Failed to parse Environment file: ${err.message}`));
+        process.exit(constants.EXIT_STATUS.ERROR_INVALID_FILE);
       }
     }
 
@@ -480,11 +521,6 @@ const handler = async function (argv) {
         console.error(chalk.red(`Failed to parse global environment: ${err.message}`));
         process.exit(constants.EXIT_STATUS.ERROR_INVALID_FILE);
       }
-
-      envVars = { ...globalEnvVars, ...envVars };
-      if (!envVars.__name__ && globalEnvVars.__name__) {
-        envVars.__name__ = globalEnvVars.__name__;
-      }
     }
 
     if (envVar) {
@@ -525,6 +561,9 @@ const handler = async function (argv) {
     }
     if (noproxy) {
       options['noproxy'] = true;
+    }
+    if (cacheSslSession) {
+      options['cacheSslSession'] = true;
     }
     if (verbose) {
       options['verbose'] = true;
@@ -626,6 +665,15 @@ const handler = async function (argv) {
 
     const runtime = getJsSandboxRuntime(sandbox);
 
+    // Fetch system proxy once for all requests (skip if --noproxy flag is set)
+    if (!noproxy) {
+      try {
+        options['cachedSystemProxy'] = await getSystemProxy();
+      } catch (error) {
+        console.warn(chalk.yellow('Failed to detect system proxy, continuing without system proxy'));
+      }
+    }
+
     const runSingleRequestByPathname = async (relativeItemPathname) => {
       const ext = FORMAT_CONFIG[collection.format].ext;
       return new Promise(async (resolve, reject) => {
@@ -646,7 +694,7 @@ const handler = async function (argv) {
             runtime,
             collection,
             runSingleRequestByPathname,
-            activeEnvironment
+            globalEnvVars
           );
           resolve(res?.response);
         }
@@ -672,7 +720,7 @@ const handler = async function (argv) {
         runtime,
         collection,
         runSingleRequestByPathname,
-        activeEnvironment
+        globalEnvVars
       );
 
       const isLastRun = currentRequestIndex === requestItems.length - 1;
@@ -690,38 +738,16 @@ const handler = async function (argv) {
         ...result,
         runDuration: process.hrtime(start)[0] + process.hrtime(start)[1] / 1e9,
         suitename: pathname.replace('.bru', ''),
-        name
+        name,
+        path: result.test?.filename || path.relative(collectionPath, pathname)
       });
 
-      if (reporterSkipAllHeaders) {
-        results.forEach((result) => {
-          result.request.headers = {};
-          result.response.headers = {};
-        });
-      }
-
-      const deleteHeaderIfExists = (headers, header) => {
-        Object.keys(headers).forEach((key) => {
-          if (key.toLowerCase() === header.toLowerCase()) {
-            delete headers[key];
-          }
-        });
-      };
-
-      if (reporterSkipHeaders?.length) {
-        results.forEach((result) => {
-          if (result.request?.headers) {
-            reporterSkipHeaders.forEach((header) => {
-              deleteHeaderIfExists(result.request.headers, header);
-            });
-          }
-          if (result.response?.headers) {
-            reporterSkipHeaders.forEach((header) => {
-              deleteHeaderIfExists(result.response.headers, header);
-            });
-          }
-        });
-      }
+      sanitizeResultsForReporter(results, {
+        skipAllHeaders: reporterSkipAllHeaders,
+        skipHeaders: reporterSkipHeaders,
+        skipRequestBody: reporterSkipRequestBody || reporterSkipBody,
+        skipResponseBody: reporterSkipResponseBody || reporterSkipBody
+      });
 
       // bail if option is set and there is a failure
       if (bail) {
@@ -762,6 +788,9 @@ const handler = async function (argv) {
         currentRequestIndex++;
       }
     }
+
+    const skippedFileResults = createSkippedFileResults(global.brunoSkippedFiles || [], collectionPath);
+    results.push(...skippedFileResults);
 
     const summary = printRunSummary(results);
     const runCompletionTime = new Date().toISOString();

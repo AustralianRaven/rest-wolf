@@ -30,7 +30,8 @@ const defaultPreferences = {
     codeFontSize: 13
   },
   proxy: {
-    inherit: true,
+    source: 'inherit',
+    pac: { source: '' },
     config: {
       protocol: 'http',
       hostname: '',
@@ -51,16 +52,28 @@ const defaultPreferences = {
       dark: '#546de5' // Default Bruno blue
     }
   },
-  beta: {},
+  beta: {
+    'openapi-sync': false
+  },
   onboarding: {
-    hasLaunchedBefore: false
+    hasLaunchedBefore: false,
+    hasSeenWelcomeModal: true
   },
   general: {
-    defaultCollectionLocation: ''
+    defaultLocation: '',
+    defaultWorkspacePath: ''
   },
   autoSave: {
     enabled: false,
     interval: 1000
+  },
+  display: {
+    zoomPercentage: 100
+  },
+  cache: {
+    sslSession: {
+      enabled: false
+    }
   }
 };
 
@@ -87,7 +100,10 @@ const preferencesSchema = Yup.object().shape({
   }),
   proxy: Yup.object({
     disabled: Yup.boolean().optional(),
-    inherit: Yup.boolean().required(),
+    source: Yup.string().oneOf(['manual', 'pac', 'inherit']).required(),
+    pac: Yup.object({
+      source: Yup.string().optional().max(2048).nullable()
+    }).optional(),
     config: Yup.object({
       protocol: Yup.string().oneOf(['http', 'https', 'socks4', 'socks5']),
       hostname: Yup.string().max(1024),
@@ -110,17 +126,28 @@ const preferencesSchema = Yup.object().shape({
     })
   }),
   beta: Yup.object({
+    'openapi-sync': Yup.boolean()
   }),
   onboarding: Yup.object({
-    hasLaunchedBefore: Yup.boolean()
+    hasLaunchedBefore: Yup.boolean(),
+    hasSeenWelcomeModal: Yup.boolean()
   }),
   general: Yup.object({
-    defaultCollectionLocation: Yup.string().max(1024).nullable()
+    defaultLocation: Yup.string().max(1024).nullable(),
+    defaultWorkspacePath: Yup.string().max(1024).nullable()
   }),
   autoSave: Yup.object({
     enabled: Yup.boolean(),
     interval: Yup.number().min(100)
-  })
+  }),
+  display: Yup.object({
+    zoomPercentage: Yup.number().min(50).max(150)
+  }),
+  cache: Yup.object({
+    sslSession: Yup.object({
+      enabled: Yup.boolean()
+    })
+  }).optional()
 });
 
 class PreferencesStore {
@@ -134,9 +161,27 @@ class PreferencesStore {
   getPreferences() {
     let preferences = this.store.get('preferences', {});
 
-    // Migrate proxy configuration from old formats to new format
-    const proxyMigrated = get(preferences, '_migrations.proxyConfigFormat', false);
-    if (!proxyMigrated && preferences?.proxy) {
+    // Handle existing users without proxy settings
+    // They should get disabled proxy by default, not inherit from system
+    // New users (empty preferences) will get defaultPreferences.proxy via merge
+    if (Object.keys(preferences).length > 0 && !preferences.proxy) {
+      preferences.proxy = {
+        source: 'manual',
+        disabled: true,
+        config: {
+          protocol: 'http',
+          hostname: '',
+          port: null,
+          auth: {
+            username: '',
+            password: ''
+          },
+          bypassProxy: ''
+        }
+      };
+    }
+
+    if (preferences?.proxy) {
       const proxy = preferences.proxy || {};
 
       // Check if this is an old format that needs migration
@@ -144,7 +189,8 @@ class PreferencesStore {
 
       if (hasOldFormat) {
         let newProxy = {
-          inherit: true,
+          source: 'inherit',
+          pac: { source: '' },
           config: {
             protocol: proxy.protocol || 'http',
             hostname: proxy.hostname || '',
@@ -159,19 +205,17 @@ class PreferencesStore {
 
         // Handle old format 1: enabled (boolean)
         if (proxy.hasOwnProperty('enabled') && typeof proxy.enabled === 'boolean') {
+          newProxy.source = 'manual';
           newProxy.disabled = !proxy.enabled;
-          newProxy.inherit = false;
         } else if (proxy.hasOwnProperty('mode')) {
           // Handle old format 2: mode ('off' | 'on' | 'system')
           if (proxy.mode === 'off') {
+            newProxy.source = 'manual';
             newProxy.disabled = true;
-            newProxy.inherit = false;
           } else if (proxy.mode === 'on') {
-            newProxy.disabled = false;
-            newProxy.inherit = false;
+            newProxy.source = 'manual';
           } else if (proxy.mode === 'system') {
-            newProxy.disabled = false;
-            newProxy.inherit = true;
+            newProxy.source = 'inherit';
           }
         }
 
@@ -179,7 +223,6 @@ class PreferencesStore {
         if (get(proxy, 'auth.enabled') === false) {
           newProxy.config.auth.disabled = true;
         }
-        // If auth.enabled is true or undefined, omit disabled (defaults to false)
 
         // Omit disabled: false at top level (optional field)
         if (newProxy.disabled === false) {
@@ -191,15 +234,18 @@ class PreferencesStore {
         }
 
         preferences.proxy = newProxy;
+        this.store.set('preferences', preferences);
+      }
 
-        // Mark migration as complete // ?
-        // if (!preferences._migrations) {
-        //   preferences._migrations = {};
-        // }
-        // preferences._migrations.proxyConfigFormat = true;
-
-        // Save the migrated preferences back to the store
-        // this.store.set('preferences', preferences);
+      // Migrate intermediate format: inherit boolean → source string
+      if (!hasOldFormat && proxy.hasOwnProperty('inherit')) {
+        if (proxy.inherit === true) {
+          preferences.proxy.source = 'inherit';
+        } else if (!proxy.source) {
+          preferences.proxy.source = 'manual';
+        }
+        delete preferences.proxy.inherit;
+        this.store.set('preferences', preferences);
       }
     }
 
@@ -223,6 +269,14 @@ class PreferencesStore {
         // Save the migrated preferences back to the store
         this.store.set('preferences', preferences);
       }
+    }
+
+    // Migrate from defaultCollectionLocation to defaultLocation
+    if (preferences.general?.defaultCollectionLocation !== undefined
+      && preferences.general?.defaultLocation === undefined) {
+      preferences.general.defaultLocation = preferences.general.defaultCollectionLocation;
+      delete preferences.general.defaultCollectionLocation;
+      this.store.set('preferences', preferences);
     }
 
     return merge({}, defaultPreferences, preferences);
@@ -270,7 +324,7 @@ const preferencesUtil = {
     return get(getPreferences(), 'request.timeout', 0);
   },
   getGlobalProxyConfig: () => {
-    return get(getPreferences(), 'proxy', {});
+    return get(getPreferences(), 'proxy', defaultPreferences.proxy);
   },
   shouldStoreCookies: () => {
     return get(getPreferences(), 'request.storeCookies', true);
@@ -284,16 +338,14 @@ const preferencesUtil = {
   getResponsePaneOrientation: () => {
     return get(getPreferences(), 'layout.responsePaneOrientation', 'horizontal');
   },
-  getSystemProxyEnvVariables: () => {
-    const { http_proxy, HTTP_PROXY, https_proxy, HTTPS_PROXY, no_proxy, NO_PROXY } = process.env;
-    return {
-      http_proxy: http_proxy || HTTP_PROXY,
-      https_proxy: https_proxy || HTTPS_PROXY,
-      no_proxy: no_proxy || NO_PROXY
-    };
-  },
   isBetaFeatureEnabled: (featureName) => {
     return get(getPreferences(), `beta.${featureName}`, false);
+  },
+  getZoomPercentage: () => {
+    return get(getPreferences(), 'display.zoomPercentage', 100);
+  },
+  isSslSessionCachingEnabled: () => {
+    return get(getPreferences(), 'cache.sslSession.enabled', false);
   },
   hasLaunchedBefore: () => {
     return get(getPreferences(), 'onboarding.hasLaunchedBefore', false);

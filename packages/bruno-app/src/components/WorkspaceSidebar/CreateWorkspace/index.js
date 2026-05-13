@@ -12,20 +12,24 @@ import { browseDirectory } from 'providers/ReduxStore/slices/collections/actions
 import { multiLineMsg } from 'utils/common/index';
 import { formatIpcError } from 'utils/common/error';
 import { sanitizeName, validateName, validateNameError } from 'utils/common/regex';
+import get from 'lodash/get';
 
 const CreateWorkspace = ({ onClose }) => {
   const inputRef = useRef();
   const dispatch = useDispatch();
   const workspaces = useSelector((state) => state.workspaces.workspaces);
+  const preferences = useSelector((state) => state.app.preferences);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+
+  const defaultLocation = get(preferences, 'general.defaultLocation', '');
 
   const formik = useFormik({
     enableReinitialize: true,
     initialValues: {
       workspaceName: '',
       workspaceFolderName: '',
-      workspaceLocation: ''
+      workspaceLocation: defaultLocation
     },
     validationSchema: Yup.object({
       workspaceName: Yup.string()
@@ -36,7 +40,7 @@ const CreateWorkspace = ({ onClose }) => {
           if (!value) return true;
 
           return !workspaces.some((w) =>
-            w.name.toLowerCase() === value.toLowerCase());
+            !w.isCreating && w.name && w.name.toLowerCase() === value.toLowerCase());
         }),
       workspaceFolderName: Yup.string()
         .min(1, 'Must be at least 1 character')

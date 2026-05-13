@@ -11,6 +11,7 @@ import ApiKeyAuth from './ApiKeyAuth/';
 import { saveCollectionSettings } from 'providers/ReduxStore/slices/collections/actions';
 import StyledWrapper from './StyledWrapper';
 import OAuth2 from './OAuth2';
+import OAuth1 from './Oauth1';
 import NTLMAuth from './NTLMAuth';
 import Button from 'ui/Button';
 import { humanizeRequestAuthMode } from 'utils/collections';
@@ -52,6 +53,7 @@ const Auth = ({ collection, authModeContext = false, environmentAuthContext = fa
       case 'bearer': return <BearerAuth collection={collection} />;
       case 'digest': return <DigestAuth collection={collection} />;
       case 'ntlm': return <NTLMAuth collection={collection} />;
+      case 'oauth1': return <OAuth1 collection={collection} />;
       case 'oauth2': return <OAuth2 collection={collection} />;
       case 'wsse': return <WsseAuth collection={collection} />;
       case 'apikey': return <ApiKeyAuth collection={collection} />;

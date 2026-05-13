@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import get from 'lodash/get';
+import path from 'utils/common/path';
 import { IconCaretDown } from '@tabler/icons';
 import { browseDirectory } from 'providers/ReduxStore/slices/collections/actions';
 import { postmanToBruno } from 'utils/importers/postman-collection';
@@ -12,10 +13,12 @@ import { processBrunoCollection } from 'utils/importers/bruno-collection';
 import { processOpenCollection } from 'utils/importers/opencollection';
 import { wsdlToBruno } from '@usebruno/converters';
 import { toastError } from 'utils/common/error';
+import { useBetaFeature, BETA_FEATURES } from 'utils/beta-features';
 import Modal from 'components/Modal';
 import Help from 'components/Help';
 import Dropdown from 'components/Dropdown';
 import StyledWrapper from './StyledWrapper';
+import { DEFAULT_COLLECTION_FORMAT } from 'utils/common/constants';
 
 // Extract collection name from raw data
 const getCollectionName = (format, rawData) => {
@@ -42,19 +45,21 @@ const getCollectionName = (format, rawData) => {
       return rawData.info?.name || 'OpenCollection';
     case 'wsdl':
       return 'WSDL Collection';
+    case 'bruno-zip':
+      return rawData.collectionName || 'Bruno Collection';
     default:
       return 'Collection';
   }
 };
 
 // Convert raw data to Bruno collection format
-const convertCollection = async (format, rawData, groupingType) => {
+const convertCollection = async (format, rawData, groupingType, collectionFormat) => {
   try {
     let collection;
 
     switch (format) {
       case 'openapi':
-        collection = convertOpenapiToBruno(rawData, { groupBy: groupingType });
+        collection = convertOpenapiToBruno(rawData, { groupBy: groupingType, collectionFormat });
         break;
       case 'wsdl':
         collection = await wsdlToBruno(rawData);
@@ -71,6 +76,10 @@ const convertCollection = async (format, rawData, groupingType) => {
       case 'opencollection':
         collection = await processOpenCollection(rawData);
         break;
+      case 'bruno-zip':
+        // ZIP doesn't need conversion
+        collection = rawData;
+        break;
       default:
         throw new Error('Unknown collection format');
     }
@@ -84,17 +93,24 @@ const convertCollection = async (format, rawData, groupingType) => {
 };
 
 const groupingOptions = [
-  { value: 'tags', label: 'Tags', description: 'Group requests by OpenAPI tags', testId: 'grouping-option-tags' },
+  { value: 'tags', label: 'Tags', description: 'Group requests by OpenAPI/Swagger tags', testId: 'grouping-option-tags' },
   { value: 'path', label: 'Paths', description: 'Group requests by URL path structure', testId: 'grouping-option-path' }
 ];
 
-const ImportCollectionLocation = ({ onClose, handleSubmit, rawData, format }) => {
+const ImportCollectionLocation = ({ onClose, handleSubmit, rawData, format, sourceUrl, filePath, rawContent }) => {
   const inputRef = useRef();
   const dispatch = useDispatch();
   const [groupingType, setGroupingType] = useState('tags');
-  const [collectionFormat, setCollectionFormat] = useState('bru');
+  const [collectionFormat, setCollectionFormat] = useState(DEFAULT_COLLECTION_FORMAT);
+  const isOpenAPISyncEnabled = useBetaFeature(BETA_FEATURES.OPENAPI_SYNC);
+  const [enableCheckForSpecUpdates, setEnableCheckForSpecUpdates] = useState(isOpenAPISyncEnabled);
   const dropdownTippyRef = useRef();
   const isOpenApi = format === 'openapi';
+  const isZipImport = format === 'bruno-zip';
+  const isOpenApiFromUrl = isOpenApi && !!sourceUrl && !filePath;
+  const isOpenApiFromFile = isOpenApi && !!filePath && !sourceUrl;
+  const isSwagger2 = isOpenApi && rawData?.swagger && String(rawData.swagger).startsWith('2');
+  const showCheckForSpecUpdatesOption = isOpenAPISyncEnabled && (isOpenApiFromUrl || isOpenApiFromFile);
 
   const { workspaces, activeWorkspaceUid } = useSelector((state) => state.workspaces);
   const preferences = useSelector((state) => state.app.preferences);
@@ -102,8 +118,8 @@ const ImportCollectionLocation = ({ onClose, handleSubmit, rawData, format }) =>
   const isDefaultWorkspace = !activeWorkspace || activeWorkspace.type === 'default';
 
   const defaultLocation = isDefaultWorkspace
-    ? get(preferences, 'general.defaultCollectionLocation', '')
-    : (activeWorkspace?.pathname ? `${activeWorkspace.pathname}/collections` : '');
+    ? get(preferences, 'general.defaultLocation', '')
+    : (activeWorkspace?.pathname ? path.join(activeWorkspace.pathname, 'collections') : '');
 
   const collectionName = getCollectionName(format, rawData);
 
@@ -119,8 +135,35 @@ const ImportCollectionLocation = ({ onClose, handleSubmit, rawData, format }) =>
         .required('Location is required')
     }),
     onSubmit: async (values) => {
-      const convertedCollection = await convertCollection(format, rawData, groupingType);
-      handleSubmit(convertedCollection, values.collectionLocation, { format: collectionFormat });
+      const convertedCollection = await convertCollection(format, rawData, groupingType, collectionFormat);
+      const options = { format: collectionFormat };
+
+      if (showCheckForSpecUpdatesOption && enableCheckForSpecUpdates) {
+        const syncSourceUrl = sourceUrl || filePath; // URL or absolute path (backend converts to relative)
+        const baseBrunoConfig = {
+          version: convertedCollection.version || '1',
+          name: convertedCollection.name || 'Untitled Collection',
+          type: 'collection',
+          ignore: ['node_modules', '.git']
+        };
+
+        convertedCollection.brunoConfig = {
+          ...baseBrunoConfig,
+          ...convertedCollection.brunoConfig,
+          openapi: [
+            {
+              sourceUrl: syncSourceUrl,
+              groupBy: groupingType,
+              autoCheck: true,
+              autoCheckInterval: 5
+            }
+          ]
+        };
+
+        options.rawOpenAPISpec = rawContent || rawData;
+      }
+
+      handleSubmit(convertedCollection, values.collectionLocation, options);
     }
   });
 
@@ -158,7 +201,19 @@ const ImportCollectionLocation = ({ onClose, handleSubmit, rawData, format }) =>
     }
   }, [inputRef]);
 
-  const onSubmit = () => formik.handleSubmit();
+  const onSubmit = async () => {
+    if (isZipImport) {
+      const errors = await formik.validateForm();
+      if (Object.keys(errors).length > 0) {
+        formik.setTouched({ collectionLocation: true });
+        return;
+      }
+      const collectionLocation = formik.values.collectionLocation;
+      handleSubmit(rawData, collectionLocation, { format: collectionFormat, isZipImport: true });
+    } else {
+      formik.handleSubmit();
+    }
+  };
 
   return (
     <StyledWrapper>
@@ -211,39 +266,41 @@ const ImportCollectionLocation = ({ onClose, handleSubmit, rawData, format }) =>
               </span>
             </div>
 
-            <div className="mt-4">
-              <label htmlFor="format" className="flex items-center font-medium">
-                File Format
-                <Help width="300">
-                  <p>Choose the file format for storing requests in this collection.</p>
-                  <p className="mt-2">
-                    <strong>OpenCollection (YAML):</strong> Industry-standard YAML format (.yml files)
-                  </p>
-                  <p className="mt-1">
-                    <strong>BRU:</strong> Bruno's native file format (.bru files)
-                  </p>
-                </Help>
-              </label>
-              <select
-                id="format"
-                name="format"
-                className="block textbox mt-2 w-full"
-                value={collectionFormat}
-                onChange={(e) => setCollectionFormat(e.target.value)}
-              >
-                <option value="yml">OpenCollection (YAML)</option>
-                <option value="bru">BRU Format (.bru)</option>
-              </select>
-            </div>
+            {!isZipImport && (
+              <div className="mt-4">
+                <label htmlFor="format" className="flex items-center font-medium">
+                  File Format
+                  <Help width="300">
+                    <p>Choose the file format for storing requests in this collection.</p>
+                    <p className="mt-2">
+                      <strong>OpenCollection (YAML):</strong> Industry-standard YAML format (.yml files)
+                    </p>
+                    <p className="mt-1">
+                      <strong>BRU:</strong> Bruno's native file format (.bru files)
+                    </p>
+                  </Help>
+                </label>
+                <select
+                  id="format"
+                  name="format"
+                  className="block textbox mt-2 w-full"
+                  value={collectionFormat}
+                  onChange={(e) => setCollectionFormat(e.target.value)}
+                >
+                  <option value="yml">OpenCollection (YAML)</option>
+                  <option value="bru">BRU Format (.bru)</option>
+                </select>
+              </div>
+            )}
           </div>
 
           {isOpenApi && (
-            <div className="mt-4 flex gap-4 items-center">
+            <div className="mt-4 flex gap-4 items-center justify-between">
               <div>
-                <label htmlFor="groupingType" className="block font-medium mt-4">
+                <label htmlFor="groupingType" className="block font-medium">
                   Folder arrangement
                 </label>
-                <p className="text-gray-600 dark:text-gray-400 mt-1 mb-2">
+                <p className="text-muted text-xs mt-1 mb-2">
                   Select whether to create folders according to the spec's paths or tags.
                 </p>
               </div>
@@ -264,6 +321,26 @@ const ImportCollectionLocation = ({ onClose, handleSubmit, rawData, format }) =>
                   ))}
                 </Dropdown>
               </div>
+            </div>
+          )}
+
+          {showCheckForSpecUpdatesOption && (
+            <div className={`mt-4 ${isSwagger2 ? 'opacity-50 pointer-events-none' : ''}`}>
+              <label className={`flex items-center gap-2 ${isSwagger2 ? '' : 'cursor-pointer'}`}>
+                <input
+                  type="checkbox"
+                  checked={isSwagger2 ? false : enableCheckForSpecUpdates}
+                  onChange={(e) => setEnableCheckForSpecUpdates(e.target.checked)}
+                  disabled={isSwagger2}
+                  className={`checkbox ${isSwagger2 ? '' : 'cursor-pointer'}`}
+                />
+                <span className="font-medium">Check for Spec Updates</span>
+              </label>
+              <p className="text-muted text-xs mt-1">
+                {isSwagger2
+                  ? 'OpenAPI Sync is not supported for Swagger 2.0 specs.'
+                  : 'Stay notified of spec changes and sync your collection with the spec.'}
+              </p>
             </div>
           )}
         </form>

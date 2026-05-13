@@ -6,7 +6,7 @@ import { savePreferences } from 'providers/ReduxStore/slices/app';
 import StyledWrapper from './StyledWrapper';
 import toast from 'react-hot-toast';
 
-const Font = ({ close }) => {
+const Font = () => {
   const dispatch = useDispatch();
   const preferences = useSelector((state) => state.app.preferences);
   const isInitialMount = useRef(true);
@@ -38,11 +38,14 @@ const Font = ({ close }) => {
     });
   }, [dispatch, preferences]);
 
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
   const debouncedSave = useCallback(
     debounce((font, fontSize) => {
-      handleSave(font, fontSize);
+      handleSaveRef.current(font, fontSize);
     }, 500),
-    [handleSave]
+    []
   );
 
   useEffect(() => {
@@ -52,7 +55,7 @@ const Font = ({ close }) => {
     }
     debouncedSave(codeFont, codeFontSize);
     return () => {
-      debouncedSave.cancel();
+      debouncedSave.flush();
     };
   }, [codeFont, codeFontSize, debouncedSave]);
 

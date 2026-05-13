@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { setEnvVarSearchQuery, setEnvVarSearchExpanded } from 'providers/ReduxStore/slices/app';
+import useDebounce from 'hooks/useDebounce';
 import StyledWrapper from './StyledWrapper';
 import EnvironmentsSidebar from './EnvironmentsSidebar';
 import AuthModesSidebar from './AuthModesSidebar';
@@ -24,10 +26,18 @@ const readNum = (key, fallback) => {
 };
 
 const WorkspaceEnvironments = ({ workspace }) => {
+  const dispatch = useDispatch();
   const [isModified, setIsModified] = useState(false);
   const [selection, setSelection] = useState(null); // { kind: 'env'|'auth-mode', uid }
   const [showImportModal, setShowImportModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+
+  const envSearchQuery = useSelector((state) => state.app.envVarSearch?.global?.query ?? '');
+  const isEnvSearchExpanded = useSelector((state) => state.app.envVarSearch?.global?.expanded ?? false);
+  const setEnvSearchQuery = (q) => dispatch(setEnvVarSearchQuery({ context: 'global', query: q }));
+  const setIsEnvSearchExpanded = (v) => dispatch(setEnvVarSearchExpanded({ context: 'global', expanded: v }));
+  const debouncedEnvSearchQuery = useDebounce(envSearchQuery, 300);
+  const envSearchInputRef = useRef(null);
 
   // Resizable sidebar width (px) and inner top/bottom split (ratio of sidebar height)
   const [sidebarWidth, setSidebarWidth] = useState(() => clamp(readNum(SIDEBAR_WIDTH_KEY, 240), 180, 600));
@@ -153,6 +163,12 @@ const WorkspaceEnvironments = ({ workspace }) => {
               setIsModified={setIsModified}
               originalEnvironmentVariables={selectedEnvironment.variables || []}
               collection={null}
+              searchQuery={envSearchQuery}
+              setSearchQuery={setEnvSearchQuery}
+              isSearchExpanded={isEnvSearchExpanded}
+              setIsSearchExpanded={setIsEnvSearchExpanded}
+              debouncedSearchQuery={debouncedEnvSearchQuery}
+              searchInputRef={envSearchInputRef}
             />
           ) : selectedAuthMode ? (
             <WorkspaceAuthModeDetails authMode={selectedAuthMode} />

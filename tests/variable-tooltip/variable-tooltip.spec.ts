@@ -6,9 +6,12 @@ import {
   createEnvironment,
   addEnvironmentVariables,
   saveEnvironment,
+  selectRequestPaneTab,
   closeEnvironmentPanel
 } from '../utils/page';
 import { buildCommonLocators } from '../utils/page/locators';
+
+const saveShortcut = process.platform === 'darwin' ? 'Meta+s' : 'Control+s';
 
 test.describe('Variable Tooltip', () => {
   test.afterEach(async ({ page }) => {
@@ -43,7 +46,7 @@ test.describe('Variable Tooltip', () => {
       const urlEditor = page.locator('#request-url .CodeMirror');
       await urlEditor.click();
       await page.keyboard.type('https://api.example.com?key={{apiKey}}');
-      await page.keyboard.press('Control+s');
+      await page.keyboard.press(saveShortcut);
     });
 
     await test.step('Test basic tooltip', async () => {
@@ -63,7 +66,7 @@ test.describe('Variable Tooltip', () => {
     await test.step('Test secret variable with toggle', async () => {
       await page.mouse.move(0, 0);
 
-      await page.getByRole('tab', { name: 'Headers' }).click();
+      await selectRequestPaneTab(page, 'Headers');
 
       const headerTable = page.locator('table').first();
       const headerRow = headerTable.locator('tbody tr').first();
@@ -75,7 +78,7 @@ test.describe('Variable Tooltip', () => {
       const headerValueEditor = headerRow.locator('.CodeMirror').nth(1);
       await headerValueEditor.click();
       await page.keyboard.type('Bearer {{secretToken}}');
-      await page.keyboard.press('Control+s');
+      await page.keyboard.press(saveShortcut);
 
       // Test tooltip with secret
       const secretVar = headerValueEditor.locator('.cm-variable-valid').filter({ hasText: 'secretToken' }).first();
@@ -131,7 +134,7 @@ test.describe('Variable Tooltip', () => {
       const urlEditor = page.locator('#request-url .CodeMirror');
       await urlEditor.click();
       await page.keyboard.type('{{endpoint}}');
-      await page.keyboard.press('Control+s');
+      await page.keyboard.press(saveShortcut);
     });
 
     await test.step('Test variable referencing other variables', async () => {
@@ -242,7 +245,7 @@ test.describe('Variable Tooltip', () => {
       const urlEditor = locators.request.urlInput();
       await urlEditor.click();
       await page.keyboard.type('https://example.com');
-      await page.keyboard.press('Control+s');
+      await page.keyboard.press(saveShortcut);
     });
 
     await test.step('Test process.env variable tooltip', async () => {
@@ -254,7 +257,7 @@ test.describe('Variable Tooltip', () => {
       await urlEditor.click();
       await page.keyboard.press('End');
       await page.keyboard.type('?env={{process.env.HOME}}');
-      await page.keyboard.press('Control+s');
+      await page.keyboard.press(saveShortcut);
 
       // Hover over process.env variable
       const processEnvVar = urlEditor.locator('.cm-variable-valid, .cm-variable-invalid').filter({ hasText: 'process.env.HOME' }).first();
@@ -288,7 +291,7 @@ test.describe('Variable Tooltip', () => {
       const urlEditor = page.locator('#request-url .CodeMirror');
       await urlEditor.click();
       await page.keyboard.type('https://api.example.com');
-      await page.keyboard.press('Control+s');
+      await page.keyboard.press(saveShortcut);
     });
 
     await test.step('Edit URL to create draft with undefined variable', async () => {
@@ -359,7 +362,7 @@ test.describe('Variable Tooltip', () => {
 
     await test.step('Verify variable exists in Vars tab', async () => {
       // Check variable is saved to file - should appear in the Vars tab
-      await page.getByRole('tab', { name: 'Vars' }).click();
+      await selectRequestPaneTab(page, 'Vars');
 
       // The variable should exist in the saved file
       const varsTable = page.locator('table').first();
@@ -396,11 +399,11 @@ test.describe('Variable Tooltip', () => {
       const urlEditor = page.locator('#request-url .CodeMirror');
       await urlEditor.click();
       await page.keyboard.type('https://api.example.com');
-      await page.keyboard.press('Control+s');
+      await page.keyboard.press(saveShortcut);
     });
 
     await test.step('Test invalid variable name with space', async () => {
-      await page.getByRole('tab', { name: 'Body' }).click();
+      await selectRequestPaneTab(page, 'Body');
 
       // Select JSON body mode
       await page.locator('.body-mode-selector').click();
@@ -413,7 +416,7 @@ test.describe('Variable Tooltip', () => {
         const cm = el.CodeMirror;
         cm.setValue('{\n  "userId": "{{user id}}"\n}');
       });
-      await page.keyboard.press('Control+s');
+      await page.keyboard.press(saveShortcut);
 
       // Hover over the invalid variable
       await page.mouse.move(0, 0);

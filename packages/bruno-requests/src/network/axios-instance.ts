@@ -1,6 +1,7 @@
 import { default as axios, AxiosRequestConfig, AxiosRequestHeaders, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import http from 'node:http';
 import https from 'node:https';
+import { defaultAgentOptions } from './agent-defaults';
 
 /**
  *
@@ -20,6 +21,7 @@ import https from 'node:https';
 
 type ModifiedInternalAxiosRequestConfig = InternalAxiosRequestConfig & {
   startTime: number;
+  __headersToDelete?: string[];
 };
 
 type ModifiedAxiosResponse = AxiosResponse & {
@@ -28,8 +30,8 @@ type ModifiedAxiosResponse = AxiosResponse & {
 
 const baseRequestConfig: Partial<AxiosRequestConfig> = {
   proxy: false,
-  httpAgent: new http.Agent({ keepAlive: true }),
-  httpsAgent: new https.Agent({ keepAlive: true }),
+  httpAgent: new http.Agent(defaultAgentOptions),
+  httpsAgent: new https.Agent(defaultAgentOptions),
   transformRequest: function transformRequest(data: any, headers: AxiosRequestHeaders) {
     const contentType = headers.getContentType() || '';
     const hasJSONContentType = contentType.includes('json');
@@ -51,10 +53,28 @@ const makeAxiosInstance = (customRequestConfig?: AxiosRequestConfig) => {
   customRequestConfig = customRequestConfig || {};
   const axiosInstance = axios.create({
     ...baseRequestConfig,
-    ...customRequestConfig
+    ...customRequestConfig,
+    headers: {}
   });
 
   axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+    // Apply header deletions requested via req.deleteHeader() in pre-request scripts.
+    const modConfig = config as ModifiedInternalAxiosRequestConfig;
+    const headersToDelete = modConfig.__headersToDelete;
+    if (headersToDelete && Array.isArray(headersToDelete)) {
+      headersToDelete.forEach((headerName: string) => {
+        const lower = headerName.toLowerCase();
+        if (lower === 'host' || lower === 'connection') return;
+        // Using set(name, null) rather than delete(): the axios http adapter guards its
+        // own defaults (User-Agent, Accept-Encoding) with set(..., false) which only
+        // skips writing when the key already exists. delete() removes the key entirely,
+        // so the guard misses and the adapter re-adds the default. null keeps the key
+        // present (blocking the guard) while toJSON() omits null values from the wire.
+        config.headers.set(headerName, null);
+      });
+      delete modConfig.__headersToDelete;
+    }
+
     const modifiedConfig: ModifiedInternalAxiosRequestConfig = {
       ...config,
       startTime: Date.now()

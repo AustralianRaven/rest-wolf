@@ -25,6 +25,10 @@ const clearOauth2Credentials = ({ collectionUid, url, credentialsId }) => {
   oauth2Store.clearCredentialsForCollection({ collectionUid, url, credentialsId });
 };
 
+const clearOauth2CredentialsByCredentialsId = ({ collectionUid, credentialsId }) => {
+  oauth2Store.clearCredentialsByCredentialsId({ collectionUid, credentialsId });
+};
+
 const getStoredOauth2Credentials = ({ collectionUid, url, credentialsId }) => {
   try {
     const credentials = oauth2Store.getCredentialsForCollection({ collectionUid, url, credentialsId });
@@ -52,7 +56,7 @@ const safeParseJSONBuffer = (data) => {
 const getCredentialsFromTokenUrl = async ({ requestConfig, certsAndProxyConfig }) => {
   const { proxyMode, proxyConfig, httpsAgentRequestFields, interpolationOptions } = certsAndProxyConfig;
   const axiosInstance = makeAxiosInstance({ proxyMode, proxyConfig, httpsAgentRequestFields, interpolationOptions });
-  let requestDetails, parsedResponseData;
+  let requestDetails = { request: {}, response: {} }, parsedResponseData;
   try {
     const response = await axiosInstance(requestConfig);
     const { url: responseUrl, headers: responseHeaders, status: responseStatus, statusText: responseStatusText, data: responseData, timeline, config } = response || {};
@@ -112,7 +116,7 @@ const getCredentialsFromTokenUrl = async ({ requestConfig, certsAndProxyConfig }
           statusText: error?.code,
           headers: {},
           data: safeStringifyJSON(error?.errors),
-          timeline: error?.response?.timeline
+          timeline: error?.timeline
         }
       };
     }
@@ -132,7 +136,7 @@ const getCredentialsFromTokenUrl = async ({ requestConfig, certsAndProxyConfig }
 
 // AUTHORIZATION CODE
 
-const getOAuth2TokenUsingAuthorizationCode = async ({ request, collectionUid, forceFetch = false, certsAndProxyConfig }) => {
+const getOAuth2TokenUsingAuthorizationCode = async ({ request, collectionUid, forceFetch = false, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }) => {
   let codeVerifier = generateCodeVerifier();
   let codeChallenge = generateCodeChallenge(codeVerifier);
 
@@ -204,7 +208,7 @@ const getOAuth2TokenUsingAuthorizationCode = async ({ request, collectionUid, fo
         if (autoRefreshToken && storedCredentials.refresh_token) {
           // Try to refresh token
           try {
-            const refreshedCredentialsData = await refreshOauth2Token({ requestCopy, collectionUid, certsAndProxyConfig });
+            const refreshedCredentialsData = await refreshOauth2Token({ requestCopy, collectionUid, certsAndProxyConfig: certsAndProxyConfigForRefreshUrl });
             return { collectionUid, url, credentials: refreshedCredentialsData.credentials, credentialsId };
           } catch (error) {
             // Refresh failed
@@ -254,7 +258,8 @@ const getOAuth2TokenUsingAuthorizationCode = async ({ request, collectionUid, fo
     'Accept': 'application/json'
   };
   if (credentialsPlacement === 'basic_auth_header') {
-    axiosRequestConfig.headers['Authorization'] = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+    const secret = clientSecret ?? '';
+    axiosRequestConfig.headers['Authorization'] = `Basic ${Buffer.from(`${clientId}:${secret}`).toString('base64')}`;
   }
 
   const data = {
@@ -280,7 +285,7 @@ const getOAuth2TokenUsingAuthorizationCode = async ({ request, collectionUid, fo
   }
   axiosRequestConfig.data = qs.stringify(data);
   try {
-    const { credentials, requestDetails } = await getCredentialsFromTokenUrl({ requestConfig: axiosRequestConfig, certsAndProxyConfig });
+    const { credentials, requestDetails } = await getCredentialsFromTokenUrl({ requestConfig: axiosRequestConfig, certsAndProxyConfig: certsAndProxyConfigForTokenUrl });
 
     // Ensure debugInfo.data is initialized
     if (!debugInfo) {
@@ -365,7 +370,7 @@ const getAdditionalHeaders = (params) => {
 
 // CLIENT CREDENTIALS
 
-const getOAuth2TokenUsingClientCredentials = async ({ request, collectionUid, forceFetch = false, certsAndProxyConfig }) => {
+const getOAuth2TokenUsingClientCredentials = async ({ request, collectionUid, forceFetch = false, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }) => {
   let requestCopy = cloneDeep(request);
   const oAuth = get(requestCopy, 'oauth2', {});
   const {
@@ -413,7 +418,7 @@ const getOAuth2TokenUsingClientCredentials = async ({ request, collectionUid, fo
         if (autoRefreshToken && storedCredentials.refresh_token) {
           // Try to refresh token
           try {
-            const refreshedCredentialsData = await refreshOauth2Token({ requestCopy, collectionUid, certsAndProxyConfig });
+            const refreshedCredentialsData = await refreshOauth2Token({ requestCopy, collectionUid, certsAndProxyConfig: certsAndProxyConfigForRefreshUrl });
             return { collectionUid, url, credentials: refreshedCredentialsData.credentials, credentialsId };
           } catch (error) {
             clearOauth2Credentials({ collectionUid, url, credentialsId });
@@ -458,8 +463,9 @@ const getOAuth2TokenUsingClientCredentials = async ({ request, collectionUid, fo
     'content-type': 'application/x-www-form-urlencoded',
     'Accept': 'application/json'
   };
-  if (credentialsPlacement === 'basic_auth_header' && clientSecret && clientSecret.trim() !== '') {
-    axiosRequestConfig.headers['Authorization'] = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+  if (credentialsPlacement === 'basic_auth_header') {
+    const secret = clientSecret ?? '';
+    axiosRequestConfig.headers['Authorization'] = `Basic ${Buffer.from(`${clientId}:${secret}`).toString('base64')}`;
   }
   const data = {
     grant_type: 'client_credentials'
@@ -481,7 +487,7 @@ const getOAuth2TokenUsingClientCredentials = async ({ request, collectionUid, fo
   axiosRequestConfig.data = qs.stringify(data);
   let debugInfo = { data: [] };
   try {
-    const { credentials, requestDetails } = await getCredentialsFromTokenUrl({ requestConfig: axiosRequestConfig, certsAndProxyConfig });
+    const { credentials, requestDetails } = await getCredentialsFromTokenUrl({ requestConfig: axiosRequestConfig, certsAndProxyConfig: certsAndProxyConfigForTokenUrl });
     debugInfo.data.push(requestDetails);
     credentials && persistOauth2Credentials({ collectionUid, url, credentials, credentialsId });
     return { collectionUid, url, credentials, credentialsId, debugInfo };
@@ -492,7 +498,7 @@ const getOAuth2TokenUsingClientCredentials = async ({ request, collectionUid, fo
 
 // PASSWORD CREDENTIALS
 
-const getOAuth2TokenUsingPasswordCredentials = async ({ request, collectionUid, forceFetch = false, certsAndProxyConfig }) => {
+const getOAuth2TokenUsingPasswordCredentials = async ({ request, collectionUid, forceFetch = false, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }) => {
   let requestCopy = cloneDeep(request);
   const oAuth = get(requestCopy, 'oauth2', {});
   const {
@@ -559,7 +565,7 @@ const getOAuth2TokenUsingPasswordCredentials = async ({ request, collectionUid, 
         if (autoRefreshToken && storedCredentials.refresh_token) {
           // Try to refresh token
           try {
-            const refreshedCredentialsData = await refreshOauth2Token({ requestCopy, collectionUid, certsAndProxyConfig });
+            const refreshedCredentialsData = await refreshOauth2Token({ requestCopy, collectionUid, certsAndProxyConfig: certsAndProxyConfigForRefreshUrl });
             return { collectionUid, url, credentials: refreshedCredentialsData.credentials, credentialsId };
           } catch (error) {
             clearOauth2Credentials({ collectionUid, url, credentialsId });
@@ -605,8 +611,9 @@ const getOAuth2TokenUsingPasswordCredentials = async ({ request, collectionUid, 
     'content-type': 'application/x-www-form-urlencoded',
     'Accept': 'application/json'
   };
-  if (credentialsPlacement === 'basic_auth_header' && clientSecret && clientSecret.trim() !== '') {
-    axiosRequestConfig.headers['Authorization'] = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+  if (credentialsPlacement === 'basic_auth_header') {
+    const secret = clientSecret ?? '';
+    axiosRequestConfig.headers['Authorization'] = `Basic ${Buffer.from(`${clientId}:${secret}`).toString('base64')}`;
   }
   const data = {
     grant_type: 'password',
@@ -630,7 +637,7 @@ const getOAuth2TokenUsingPasswordCredentials = async ({ request, collectionUid, 
   axiosRequestConfig.data = qs.stringify(data);
   let debugInfo = { data: [] };
   try {
-    const { credentials, requestDetails } = await getCredentialsFromTokenUrl({ requestConfig: axiosRequestConfig, certsAndProxyConfig });
+    const { credentials, requestDetails } = await getCredentialsFromTokenUrl({ requestConfig: axiosRequestConfig, certsAndProxyConfig: certsAndProxyConfigForTokenUrl });
     debugInfo.data.push(requestDetails);
     credentials && persistOauth2Credentials({ collectionUid, url, credentials, credentialsId });
     return { collectionUid, url, credentials, credentialsId, debugInfo };
@@ -667,7 +674,8 @@ const refreshOauth2Token = async ({ requestCopy, collectionUid, certsAndProxyCon
       'Accept': 'application/json'
     };
     if (credentialsPlacement === 'basic_auth_header') {
-      axiosRequestConfig.headers['Authorization'] = `Basic ${Buffer.from(`${clientId}:${clientSecret || ''}`).toString('base64')}`;
+      const secret = clientSecret ?? '';
+      axiosRequestConfig.headers['Authorization'] = `Basic ${Buffer.from(`${clientId}:${secret}`).toString('base64')}`;
     }
     axiosRequestConfig.url = url;
     axiosRequestConfig.responseType = 'arraybuffer';
@@ -937,6 +945,7 @@ const updateCollectionOauth2Credentials = ({ collectionUid, itemUid, collectionO
 module.exports = {
   persistOauth2Credentials,
   clearOauth2Credentials,
+  clearOauth2CredentialsByCredentialsId,
   getStoredOauth2Credentials,
   getOAuth2TokenUsingAuthorizationCode,
   getOAuth2TokenUsingClientCredentials,
