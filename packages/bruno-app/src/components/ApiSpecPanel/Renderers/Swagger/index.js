@@ -1,19 +1,15 @@
+import { memo } from 'react';
 import SwaggerUI from 'swagger-ui-react';
 import StyledWrapper from './StyledWrapper';
-import { useTheme } from 'providers/Theme';
 
-const Swagger = ({ string }) => {
-  const { displayedTheme } = useTheme();
-
-  console.log('string', string);
-
+const Swagger = ({ spec, onComplete }) => {
   return (
     <StyledWrapper>
-      <div className={`swagger-root w-full overflow-y-scroll ${displayedTheme}`}>
-        <SwaggerUI spec={string} />
+      <div className="swagger-root w-full">
+        <SwaggerUI spec={spec} onComplete={onComplete} />
       </div>
     </StyledWrapper>
   );
 };
 
-export default Swagger;
+export default memo(Swagger);

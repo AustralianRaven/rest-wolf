@@ -149,16 +149,19 @@ const General = ({ close }) => {
       .catch((err) => console.log(err) && toast.error('Failed to update preferences'));
   }, [dispatch, preferences]);
 
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
   const debouncedSave = useCallback(
     debounce((values) => {
       preferencesSchema.validate(values, { abortEarly: true })
         .then((validatedValues) => {
-          handleSave(validatedValues);
+          handleSaveRef.current(validatedValues);
         })
         .catch((error) => {
         });
     }, 500),
-    [handleSave]
+    []
   );
 
   useEffect(() => {
@@ -166,7 +169,7 @@ const General = ({ close }) => {
       debouncedSave(formik.values);
     }
     return () => {
-      debouncedSave.cancel();
+      debouncedSave.flush();
     };
   }, [formik.values, formik.dirty, formik.isValid, debouncedSave]);
 

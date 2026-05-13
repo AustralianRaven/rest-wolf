@@ -6,6 +6,7 @@ import BasicAuth from './BasicAuth';
 import DigestAuth from './DigestAuth';
 import WsseAuth from './WsseAuth';
 import NTLMAuth from './NTLMAuth';
+import OAuth1 from './OAuth1';
 import { updateAuth } from 'providers/ReduxStore/slices/collections';
 import { saveRequest } from 'providers/ReduxStore/slices/collections/actions';
 import { useDispatch, useSelector } from 'react-redux';
@@ -96,6 +97,9 @@ const Auth = ({ item, collection }) => {
       }
       case 'ntlm': {
         return <NTLMAuth collection={collection} item={item} request={request} save={save} updateAuth={updateAuth} />;
+      }
+      case 'oauth1': {
+        return <OAuth1 collection={collection} item={item} request={request} save={save} updateAuth={updateAuth} />;
       }
       case 'oauth2': {
         return <OAuth2 collection={collection} item={item} request={request} save={save} updateAuth={updateAuth} />;

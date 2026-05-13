@@ -94,8 +94,44 @@ test.describe('Cross-Collection Drag and Drop', () => {
     await expect(page.getByText(/Error: Cannot copy.*already exists/i)).toBeVisible();
 
     // source and target collection request should remain unchanged
-    await expect(sourceCollectionContainer.locator('.collection-item-name').filter({ hasText: requestName })).toBeVisible();
+    await expect(sourceCollectionContainer.locator('.collection-item-name').filter({ hasText: requestName }).first()).toBeVisible();
     await page.locator('#sidebar-collection-name').filter({ hasText: 'target-collection' }).click();
+    await expect(targetCollectionContainer.locator('.collection-item-name').filter({ hasText: requestName }).first()).toBeVisible();
+  });
+
+  test('Tab should be closed after cross-collection drag and drop', async ({ page, createTmpDir }) => {
+    const requestName = 'tab-close-request';
+
+    // Create source and target collections
+    await createCollection(page, 'source-collection', await createTmpDir('source-collection'));
+    await createRequest(page, requestName, 'source-collection', { url: 'https://echo.usebruno.com' });
+
+    await createCollection(page, 'target-collection', await createTmpDir('target-collection'));
+
+    // Open the request to create a tab
+    const sourceCollectionContainer = page
+      .locator('.collection-name')
+      .filter({ hasText: 'source-collection' })
+      .locator('..');
+    const sourceRequest = sourceCollectionContainer.locator('.collection-item-name').filter({ hasText: requestName }).first();
+    await sourceRequest.click();
+
+    // Verify the tab is open
+    const requestTab = page.locator('.request-tab .tab-label').filter({ hasText: requestName });
+    await expect(requestTab).toBeVisible();
+
+    // Drag the request to target collection
+    const targetCollection = page.locator('.collection-name').filter({ hasText: 'target-collection' });
+    await sourceRequest.dragTo(targetCollection);
+
+    // Verify the tab is closed after cross-collection move
+    await expect(requestTab).not.toBeVisible();
+
+    // Verify the request appears in the target collection
+    const targetCollectionContainer = page
+      .locator('.collection-name')
+      .filter({ hasText: 'target-collection' })
+      .locator('..');
     await expect(targetCollectionContainer.locator('.collection-item-name').filter({ hasText: requestName })).toBeVisible();
   });
 });

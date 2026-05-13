@@ -16,9 +16,13 @@ function buildQueryString(paramsArray: QueryParam[], { encode = false }: BuildQu
     .filter(({ name }) => typeof name === 'string' && name.trim().length > 0)
     .map(({ name, value }) => {
       const finalName = encode ? encodeURIComponent(name) : name;
-      const finalValue = encode ? encodeURIComponent(value ?? '') : (value ?? '');
 
-      return finalValue ? `${finalName}=${finalValue}` : finalName;
+      if (value === undefined) {
+        return finalName;
+      }
+
+      const finalValue = encode ? encodeURIComponent(value) : value;
+      return `${finalName}=${finalValue}`;
     })
     .join('&');
 }
@@ -39,9 +43,13 @@ function parseQueryParams(query: string, { decode = false }: ExtractQueryParamsO
         return null;
       }
 
+      // Distinguish between ?param (no '=' at all) and ?param= (has '=' with empty value)
+      const hasEqualsSign = pair.includes('=');
+      const value = hasEqualsSign ? (decode ? decodeURIComponent(valueParts.join('=')) : valueParts.join('=')) : undefined;
+
       return {
         name: decode ? decodeURIComponent(name) : name,
-        value: decode ? decodeURIComponent(valueParts.join('=')) : valueParts.join('=')
+        value
       };
     }).filter((param): param is NonNullable<typeof param> => param !== null);
 
@@ -76,10 +84,23 @@ const encodeUrl = (url: string): string => {
   return encodedUrl;
 };
 
+/**
+ * Strip the origin (scheme + authority) from a URL, returning the path, query, and fragment.
+ * Returns '/' if the URL has no path component.
+ *
+ * @example
+ * stripOrigin('https://example.com/api/users?name=foo') // '/api/users?name=foo'
+ * stripOrigin('http://localhost:3000')                   // '/'
+ */
+const stripOrigin = (url: string): string => {
+  return url.replace(/^https?:\/\/[^/?#]*/, '') || '/';
+};
+
 export {
   encodeUrl,
   parseQueryParams,
   buildQueryString,
+  stripOrigin,
   type QueryParam,
   type BuildQueryStringOptions,
   type ExtractQueryParamsOptions

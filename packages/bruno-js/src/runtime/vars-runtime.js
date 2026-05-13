@@ -36,7 +36,21 @@ class VarsRuntime {
     }
 
     const promptVariables = request?.promptVariables || {};
-    const bru = new Bru(envVariables, runtimeVariables, processEnvVars, undefined, collectionVariables, folderVariables, requestVariables, globalEnvironmentVariables, oauth2CredentialVariables, undefined, promptVariables);
+    const certsAndProxyConfig = request?.certsAndProxyConfig;
+    const bru = new Bru({
+      runtime: this.runtime,
+      envVariables,
+      runtimeVariables,
+      processEnvVars,
+      collectionVariables,
+      folderVariables,
+      requestVariables,
+      globalEnvironmentVariables,
+      oauth2CredentialVariables,
+      promptVariables,
+      certsAndProxyConfig,
+      requestUrl: request?.url
+    });
     const req = new BrunoRequest(request);
     const res = createResponseParser(response);
 

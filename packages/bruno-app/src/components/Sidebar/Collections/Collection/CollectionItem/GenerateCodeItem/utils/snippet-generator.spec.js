@@ -1,3 +1,5 @@
+import { getAuthHeaders } from 'utils/codegenerator/auth';
+
 jest.mock('httpsnippet', () => {
   return {
     HTTPSnippet: jest.fn().mockImplementation((harRequest) => ({
@@ -56,7 +58,9 @@ jest.mock('utils/collections/index', () => {
       ...collection?.processEnvVariables,
       baseUrl: 'https://api.example.com',
       apiKey: 'secret-key-123',
-      userId: '12345'
+      userId: '12345',
+      user: 'admin',
+      pass: 'secret123'
     })),
     getTreePathFromCollectionToItem: jest.fn(() => [])
   };
@@ -426,6 +430,55 @@ describe('Snippet Generator - Simple Tests', () => {
 
     expect(result).toBe('curl -X POST https://api.test.com/{{endpoint}} -H "Content-Type: application/json" -d \'{"name": "{{userName}}", "email": "{{userEmail}}", "age": {{userAge}}}\'');
   });
+
+  it('should interpolate auth credentials correctly', () => {
+    // Auth inheritance is resolved upstream in index.js before calling generateSnippet
+    // So the item already has the resolved auth (not 'inherit' mode)
+    const item = {
+      request: {
+        method: 'GET',
+        url: 'https://api.example.com',
+        auth: {
+          mode: 'basic',
+          basic: {
+            username: '{{user}}',
+            password: '{{pass}}'
+          }
+        }
+      }
+    };
+
+    const collection = {
+      root: {
+        request: {
+          auth: { mode: 'none' }
+        }
+      }
+    };
+
+    const { HTTPSnippet: mockedHTTPSnippet } = require('httpsnippet');
+    const { getAuthHeaders: actualGetAuthHeaders } = jest.requireActual('utils/codegenerator/auth');
+    getAuthHeaders.mockImplementation(actualGetAuthHeaders);
+
+    const language = { target: 'shell', client: 'curl' };
+
+    generateSnippet({
+      language,
+      item,
+      collection,
+      shouldInterpolate: true
+    });
+
+    const harRequest = mockedHTTPSnippet.mock.calls[0][0];
+
+    // "admin:secret123" encoded is "YWRtaW46c2VjcmV0MTIz"
+    expect(harRequest.headers).toContainEqual(
+      expect.objectContaining({
+        name: 'Authorization',
+        value: 'Basic YWRtaW46c2VjcmV0MTIz'
+      })
+    );
+  });
 });
 
 // Snippet should include inherited headers
@@ -552,5 +605,663 @@ describe('generateSnippet with edge-case bodies', () => {
 
     const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: true });
     expect(result).toMatch(/^curl -X POST/);
+  });
+});
+
+describe('generateSnippet with OAuth2 authentication', () => {
+  const language = { target: 'shell', client: 'curl' };
+  const baseCollection = { root: { request: { auth: { mode: 'none' }, headers: [] } } };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Mock getAuthHeaders to return OAuth2 headers based on the auth config
+    const authUtils = require('utils/codegenerator/auth');
+    authUtils.getAuthHeaders.mockImplementation((requestAuth, collection = null, item = null) => {
+      if (requestAuth?.mode === 'oauth2') {
+        const oauth2Config = requestAuth.oauth2 || {};
+        const tokenPlacement = oauth2Config.tokenPlacement || 'header';
+        // Use the actual value from config, defaulting to 'Bearer' only if undefined
+        // Empty string should be preserved to test no-prefix scenarios
+        const tokenHeaderPrefix = oauth2Config.tokenHeaderPrefix !== undefined
+          ? oauth2Config.tokenHeaderPrefix
+          : 'Bearer';
+        let accessToken = oauth2Config.accessToken || '<access_token>';
+
+        // If collection and item are provided, try to look up stored credentials
+        if (collection && item && collection.oauth2Credentials) {
+          const grantType = oauth2Config.grantType || '';
+          const urlToLookup = grantType === 'implicit'
+            ? oauth2Config.authorizationUrl || ''
+            : oauth2Config.accessTokenUrl || '';
+          const credentialsId = oauth2Config.credentialsId || 'credentials';
+          const collectionUid = collection.uid;
+
+          if (urlToLookup && collectionUid) {
+            // Look up stored credentials (simplified - assumes URL is already interpolated in test data)
+            const credentialsData = collection.oauth2Credentials.find(
+              (creds) =>
+                creds?.url === urlToLookup
+                && creds?.collectionUid === collectionUid
+                && creds?.credentialsId === credentialsId
+            );
+
+            if (credentialsData?.credentials?.access_token) {
+              accessToken = credentialsData.credentials.access_token;
+            }
+          }
+        }
+
+        if (tokenPlacement === 'header') {
+          // Always trim the final result for consistent formatting
+          const headerValue = tokenHeaderPrefix
+            ? `${tokenHeaderPrefix} ${accessToken}`.trim()
+            : accessToken.trim();
+          return [
+            {
+              enabled: true,
+              name: 'Authorization',
+              value: headerValue
+            }
+          ];
+        }
+      }
+      return [];
+    });
+  });
+
+  it('should include OAuth2 Bearer token in Authorization header when tokenPlacement is header', () => {
+    const item = {
+      uid: 'oauth-req',
+      request: {
+        method: 'GET',
+        url: 'https://api.example.com/users',
+        headers: [],
+        auth: {
+          mode: 'oauth2',
+          oauth2: {
+            grantType: 'client_credentials',
+            tokenPlacement: 'header',
+            tokenHeaderPrefix: 'Bearer',
+            accessToken: 'test-access-token-123'
+          }
+        }
+      }
+    };
+
+    generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+
+    const harUtils = require('utils/codegenerator/har');
+    const harCall = harUtils.buildHarRequest.mock.calls[0][0];
+    expect(harCall.headers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Authorization',
+          value: 'Bearer test-access-token-123'
+        })
+      ])
+    );
+  });
+
+  it('should use custom tokenHeaderPrefix when provided', () => {
+    const item = {
+      uid: 'oauth-req-custom',
+      request: {
+        method: 'GET',
+        url: 'https://api.example.com/users',
+        headers: [],
+        auth: {
+          mode: 'oauth2',
+          oauth2: {
+            grantType: 'client_credentials',
+            tokenPlacement: 'header',
+            tokenHeaderPrefix: 'OAuth',
+            accessToken: 'custom-token-456'
+          }
+        }
+      }
+    };
+
+    generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+
+    const harUtils = require('utils/codegenerator/har');
+    const harCall = harUtils.buildHarRequest.mock.calls[0][0];
+    expect(harCall.headers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Authorization',
+          value: 'OAuth custom-token-456'
+        })
+      ])
+    );
+  });
+
+  it('should not include Authorization header when tokenPlacement is url', () => {
+    const item = {
+      uid: 'oauth-req-url',
+      request: {
+        method: 'GET',
+        url: 'https://api.example.com/users',
+        headers: [],
+        auth: {
+          mode: 'oauth2',
+          oauth2: {
+            grantType: 'client_credentials',
+            tokenPlacement: 'url',
+            tokenQueryKey: 'access_token',
+            accessToken: 'token-in-url'
+          }
+        }
+      }
+    };
+
+    generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+
+    const harUtils = require('utils/codegenerator/har');
+    const harCall = harUtils.buildHarRequest.mock.calls[0][0];
+    const authHeader = harCall.headers.find((h) => h.name === 'Authorization');
+    expect(authHeader).toBeUndefined();
+  });
+
+  it('should use placeholder when accessToken is not available', () => {
+    const item = {
+      uid: 'oauth-req-placeholder',
+      request: {
+        method: 'GET',
+        url: 'https://api.example.com/users',
+        headers: [],
+        auth: {
+          mode: 'oauth2',
+          oauth2: {
+            grantType: 'client_credentials',
+            tokenPlacement: 'header',
+            tokenHeaderPrefix: 'Bearer'
+          }
+        }
+      }
+    };
+
+    generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+
+    const harUtils = require('utils/codegenerator/har');
+    const harCall = harUtils.buildHarRequest.mock.calls[0][0];
+    expect(harCall.headers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Authorization',
+          value: 'Bearer <access_token>'
+        })
+      ])
+    );
+  });
+
+  it('should handle empty tokenHeaderPrefix', () => {
+    const item = {
+      uid: 'oauth-req-no-prefix',
+      request: {
+        method: 'GET',
+        url: 'https://api.example.com/users',
+        headers: [],
+        auth: {
+          mode: 'oauth2',
+          oauth2: {
+            grantType: 'client_credentials',
+            tokenPlacement: 'header',
+            tokenHeaderPrefix: '',
+            accessToken: 'token-without-prefix'
+          }
+        }
+      }
+    };
+
+    generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+
+    const harUtils = require('utils/codegenerator/har');
+    const harCall = harUtils.buildHarRequest.mock.calls[0][0];
+    expect(harCall.headers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Authorization',
+          value: 'token-without-prefix'
+        })
+      ])
+    );
+  });
+});
+
+describe('generateSnippet – digest and NTLM auth curl export', () => {
+  const language = { target: 'shell', client: 'curl' };
+
+  const baseCollection = {
+    root: {
+      request: {
+        headers: [],
+        auth: { mode: 'none' }
+      }
+    }
+  };
+
+  it('should add --digest flag and --user for digest auth', () => {
+    const item = {
+      uid: 'digest-req',
+      request: {
+        method: 'GET',
+        url: 'https://example.com/api',
+        headers: [],
+        body: { mode: 'none' },
+        auth: {
+          mode: 'digest',
+          digest: {
+            username: 'myuser',
+            password: 'mypass'
+          }
+        }
+      }
+    };
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toMatch(/^curl --digest --user 'myuser:mypass'/);
+  });
+
+  it('should add --ntlm flag and --user for NTLM auth', () => {
+    const item = {
+      uid: 'ntlm-req',
+      request: {
+        method: 'GET',
+        url: 'https://example.com/api',
+        headers: [],
+        body: { mode: 'none' },
+        auth: {
+          mode: 'ntlm',
+          ntlm: {
+            username: 'myuser',
+            password: 'mypass'
+          }
+        }
+      }
+    };
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toMatch(/^curl --ntlm --user 'myuser:mypass'/);
+  });
+
+  it('should handle digest auth with username only (no password)', () => {
+    const item = {
+      uid: 'digest-no-pass',
+      request: {
+        method: 'GET',
+        url: 'https://example.com/api',
+        headers: [],
+        body: { mode: 'none' },
+        auth: {
+          mode: 'digest',
+          digest: {
+            username: 'myuser',
+            password: ''
+          }
+        }
+      }
+    };
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toMatch(/^curl --digest --user 'myuser'/);
+  });
+});
+
+describe('generateSnippet – encodeUrl setting', () => {
+  const language = { target: 'shell', client: 'curl' };
+  const baseCollection = { root: { request: { auth: { mode: 'none' }, headers: [] } } };
+
+  // Replicate HTTPSnippet's internal encoding to get encoded path+query
+  const getEncodedPath = (url) => {
+    const { parse } = require('url');
+    const { stringify } = require('query-string');
+    const parsed = parse(url, true, true);
+    if (!parsed.query || Object.keys(parsed.query).length === 0) {
+      return parsed.pathname;
+    }
+    const search = stringify(parsed.query, { sort: false });
+    return search ? `${parsed.pathname}?${search}` : parsed.pathname;
+  };
+
+  const makeItem = (url, settings, draft) => ({
+    uid: 'enc-req',
+    request: {
+      method: 'GET',
+      url,
+      headers: [],
+      body: { mode: 'none' },
+      auth: { mode: 'none' }
+    },
+    ...(settings !== undefined && { settings }),
+    ...(draft !== undefined && { draft })
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Mock HTTPSnippet to simulate encoding (same pipeline as the real library)
+    require('httpsnippet').HTTPSnippet = jest.fn().mockImplementation((harRequest) => ({
+      convert: jest.fn((target) => {
+        const method = harRequest?.method || 'GET';
+        const url = harRequest?.url || 'http://example.com';
+        const { parse } = require('url');
+        const parsed = parse(url, false, true);
+        const encodedPath = getEncodedPath(url);
+        // Simulate targets that use only the path (e.g., python http.client, raw HTTP)
+        if (target === 'python') {
+          return `conn.request("${method}", "${encodedPath}", headers=headers)`;
+        }
+        // Full URL targets: reconstruct with encoded path
+        const fullEncodedUrl = `${parsed.protocol}//${parsed.host}${encodedPath}`;
+        return `curl -X ${method} '${fullEncodedUrl}'`;
+      })
+    }));
+  });
+
+  it('should preserve equals signs in query values when encodeUrl is false', () => {
+    const rawUrl = 'https://example.com/api?token=abc123==&type=test';
+    const item = makeItem(rawUrl, { encodeUrl: false });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('token=abc123==');
+    // %3D = encoded '='
+    expect(result).not.toContain('%3D');
+  });
+
+  it('should preserve email with plus alias and @ when encodeUrl is false', () => {
+    const rawUrl = 'https://example.com/invite?email=test+alias@example.com';
+    const item = makeItem(rawUrl, { encodeUrl: false });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('email=test+alias@example.com');
+  });
+
+  it('should preserve redirect URL with colons and slashes when encodeUrl is false', () => {
+    const rawUrl = 'https://example.com/auth?redirect=https://other.com/callback&scope=read';
+    const item = makeItem(rawUrl, { encodeUrl: false });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('redirect=https://other.com/callback');
+    // %3A = encoded ':'
+    expect(result).not.toContain('%3A');
+    // %2F = encoded '/'
+    expect(result).not.toContain('%2F');
+  });
+
+  it('should preserve comma-separated values when encodeUrl is false', () => {
+    const rawUrl = 'https://example.com/filter?tags=a,b,c&time=10:30';
+    const item = makeItem(rawUrl, { encodeUrl: false });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('tags=a,b,c');
+    expect(result).toContain('time=10:30');
+  });
+
+  it('should encode URL when encodeUrl is true', () => {
+    const rawUrl = 'https://example.com/api?token=abc123==&type=test';
+    const item = makeItem(rawUrl, { encodeUrl: true });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    // %3D%3D = encoded '=='
+    expect(result).toContain('%3D%3D');
+  });
+
+  it('should preserve raw URL when settings are absent (encodeUrl defaults to false)', () => {
+    const rawUrl = 'https://example.com/auth?redirect=https://other.com/callback';
+    const item = makeItem(rawUrl);
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('redirect=https://other.com/callback');
+    // %3A = encoded ':'
+    expect(result).not.toContain('%3A');
+  });
+
+  it('should be a no-op for URLs without query params and no encoding needed', () => {
+    const rawUrl = 'https://example.com/api/users';
+    const item = makeItem(rawUrl, { encodeUrl: false });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toBe(`curl -X GET '${rawUrl}'`);
+  });
+
+  it('should preserve spaces in pathname when encodeUrl is false and rawUrl is provided', () => {
+    const encodedUrl = 'https://example.com/my%20path/hello%20world?token=abc123==';
+    const item = {
+      ...makeItem(encodedUrl, { encodeUrl: false }),
+      rawUrl: 'https://example.com/my path/hello world?token=abc123=='
+    };
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('/my path/hello world?token=abc123==');
+    expect(result).not.toContain('%20');
+    expect(result).not.toContain('%3D');
+  });
+
+  it('should preserve spaces in pathname without query params when encodeUrl is false', () => {
+    const encodedUrl = 'https://example.com/my%20path/hello%20world';
+    const item = {
+      ...makeItem(encodedUrl, { encodeUrl: false }),
+      rawUrl: 'https://example.com/my path/hello world'
+    };
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('/my path/hello world');
+    expect(result).not.toContain('%20');
+  });
+
+  it('should preserve spaces in path-only targets (e.g., python) when encodeUrl is false', () => {
+    const pythonLanguage = { target: 'python', client: 'python3' };
+    const encodedUrl = 'https://example.com/my%20path/hello%20world?q=test';
+    const item = {
+      ...makeItem(encodedUrl, { encodeUrl: false }),
+      rawUrl: 'https://example.com/my path/hello world?q=test'
+    };
+
+    const result = generateSnippet({ language: pythonLanguage, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('/my path/hello world?q=test');
+    expect(result).not.toContain('%20');
+  });
+
+  it('should preserve spaces in query values when encodeUrl is false and rawUrl is provided', () => {
+    const encodedUrl = 'https://example.com/api?token=abc%20123==&type=test';
+    const item = {
+      ...makeItem(encodedUrl, { encodeUrl: false }),
+      rawUrl: 'https://example.com/api?token=abc 123==&type=test'
+    };
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('token=abc 123==');
+    expect(result).not.toContain('%20');
+    expect(result).not.toContain('%3D');
+  });
+
+  it('should still work when rawUrl is not provided (backward compatibility)', () => {
+    const rawUrl = 'https://example.com/api?token=abc123==&type=test';
+    const item = makeItem(rawUrl, { encodeUrl: false });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('token=abc123==');
+    expect(result).not.toContain('%3D');
+  });
+
+  it('should keep spaces as %20 for http target when encodeUrl is false (HTTP spec compliance)', () => {
+    const httpLanguage = { target: 'http', client: 'http1.1' };
+    const encodedUrl = 'https://example.com/api?token=abc%20123==&type=test';
+    const item = {
+      ...makeItem(encodedUrl, { encodeUrl: false }),
+      rawUrl: 'https://example.com/api?token=abc 123==&type=test'
+    };
+    const result = generateSnippet({ language: httpLanguage, item, collection: baseCollection, shouldInterpolate: false });
+    // Spaces must remain encoded for valid HTTP request line
+    expect(result).toContain('%20');
+    // But other chars like = should still be decoded
+    expect(result).not.toContain('%3D');
+  });
+
+  it('should preserve user-typed %20 when encodeUrl is false (not decode to space)', () => {
+    const preEncodedUrl = 'https://example.com/api?token=abc%20123%3D%3D&type=test';
+    const item = {
+      ...makeItem(preEncodedUrl, { encodeUrl: false }),
+      rawUrl: preEncodedUrl // rawUrl has %20 intact (no decodeURI applied)
+    };
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    // %20 should be preserved, not decoded to a literal space
+    expect(result).toContain('%20');
+    // %3D should also be preserved
+    expect(result).toContain('%3D%3D');
+    // No double-encoding
+    expect(result).not.toContain('%2520');
+    expect(result).not.toContain('%253D');
+  });
+
+  it('should double-encode pre-encoded %20 when encodeUrl is true', () => {
+    const preEncodedUrl = 'https://example.com/api?token=abc%20123%3D%3D&type=test';
+    const item = {
+      ...makeItem(preEncodedUrl, { encodeUrl: true }),
+      rawUrl: preEncodedUrl
+    };
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    // %20 → %2520 because encodeURIComponent encodes the literal '%' in the already-encoded value
+    expect(result).toContain('%2520');
+    // %3D → %253D for the same reason
+    expect(result).toContain('%253D');
+  });
+
+  it('should preserve OData-style paths with parenthesized params when encodeUrl is false', () => {
+    const rawUrl = 'https://example.com/odata/Products(123)/Categories(456)?$expand=Items&$filter=Price gt 10';
+    const item = {
+      ...makeItem(rawUrl, { encodeUrl: false }),
+      rawUrl
+    };
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('Products(123)/Categories(456)');
+    expect(result).toContain('$expand=Items');
+    expect(result).toContain('$filter=Price gt 10');
+    // $ should not be encoded
+    expect(result).not.toContain('%24');
+  });
+
+  it('should use draft settings when draft exists', () => {
+    const rawUrl = 'https://example.com/api?token=abc123==&type=test';
+    const item = makeItem(rawUrl, { encodeUrl: true }, { settings: { encodeUrl: false } });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('token=abc123==');
+    // %3D%3D = encoded '=='
+    expect(result).not.toContain('%3D%3D');
+  });
+
+  it('should replace encoded path for targets that use only path+query (e.g., python http.client)', () => {
+    const pythonLanguage = { target: 'python', client: 'python3' };
+    const rawUrl = 'https://example.com/api?token=abc123==&type=test';
+    const item = makeItem(rawUrl, { encodeUrl: false });
+
+    const result = generateSnippet({ language: pythonLanguage, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('/api?token=abc123==&type=test');
+    // %3D = encoded '='
+    expect(result).not.toContain('%3D');
+  });
+
+  it('should preserve URL fragment (#) in snippet when encodeUrl is false', () => {
+    // Intentional asymmetry: when encodeUrl is false (raw mode), generateSnippet preserves the
+    // user-supplied URL as-is, including any fragment. This contrasts with encodeUrl: true,
+    // which strips fragments per RFC 3986 §3.5. The rawUrl is preserved through the makeItem
+    // call with { encodeUrl: false } and passed to generateSnippet, which intentionally treats
+    // it as a user-specified string not subject to RFC-compliant stripping. This is a designed
+    // behavior to honor user intent in raw mode, not a bug. This behavior can be revisited in
+    // the future if requirements or RFC interpretations change.
+    const rawUrl = 'https://example.com/api?token=abc==#section';
+    const item = makeItem(rawUrl, { encodeUrl: false });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toContain('#section');
+    expect(result).toContain('token=abc==');
+    expect(result).not.toContain('%3D');
+  });
+
+  it('should not include URL fragment (#) in snippet when encodeUrl is true', () => {
+    const rawUrl = 'https://example.com/api?token=abc==#section';
+    const item = makeItem(rawUrl, { encodeUrl: true });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    // Fragment is stripped — correct per RFC 3986 §3.5: user agents MUST NOT include the fragment
+    // in the HTTP request target sent to the origin server (though fragments can still appear in
+    // user-facing URLs, SPA routing, and are inherited across redirects per RFC 9110 §10.2.2).
+    // https://datatracker.ietf.org/doc/html/rfc3986#section-3.5
+    // https://datatracker.ietf.org/doc/html/rfc9110#section-10.2.2
+    expect(result).not.toContain('#section');
+    expect(result).toContain('%3D%3D');
+  });
+
+  it('should single-encode spaces and special chars when encodeUrl is true and rawUrl is provided', () => {
+    // The raw URL (before new URL() encoding) contains literal spaces and @.
+    // encodeUrl() should encode them once: space → %20, @ → %40.
+    // Previously this double-encoded because request.url was already encoded by new URL().
+    const encodedUrl = 'https://example.com/api?name=abc%20os&email=user%40test.com';
+    const item = {
+      ...makeItem(encodedUrl, { encodeUrl: true }),
+      rawUrl: 'https://example.com/api?name=abc os&email=user@test.com'
+    };
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    // space → %20 (single encoding, not %2520)
+    expect(result).toContain('%20');
+    expect(result).not.toContain('%2520');
+    // @ → %40 (single encoding, not %2540)
+    expect(result).toContain('%40');
+    expect(result).not.toContain('%2540');
+  });
+
+  it('should encode special chars in query values when encodeUrl is true (e.g., redirect URLs)', () => {
+    const rawUrl = 'https://example.com/auth?redirect=https://other.com/callback&scope=read';
+    const item = makeItem(rawUrl, { encodeUrl: true });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    // : → %3A, / → %2F when encodeURIComponent is applied to query values
+    expect(result).toContain('%3A');
+    expect(result).toContain('%2F');
+  });
+
+  it('should strip fragment and apply encodeUrl when both are present and encodeUrl is true', () => {
+    const rawUrl = 'https://example.com/api?redirect=https://other.com/cb#section';
+    const item = makeItem(rawUrl, { encodeUrl: true });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    // Fragment stripped per RFC 3986
+    expect(result).not.toContain('#section');
+    // Query value should be encoded
+    expect(result).toContain('%3A');
+    expect(result).toContain('%2F');
+  });
+
+  it('should be a no-op for path-only URLs when encodeUrl is true (no query params to encode)', () => {
+    const rawUrl = 'https://example.com/api/users';
+    const item = makeItem(rawUrl, { encodeUrl: true });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toBe(`curl -X GET '${rawUrl}'`);
+  });
+
+  it('should preserve raw URL with multiple query params in non-alphabetical order when encodeUrl is false', () => {
+    const rawUrl = 'https://example.com/api?start=2026-02-01T00:00:00.000Z&a=b';
+    const item = makeItem(rawUrl, { encodeUrl: false });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toBe(`curl -X GET '${rawUrl}'`);
+  });
+
+  it('should encode URL with multiple query params in non-alphabetical order when encodeUrl is true', () => {
+    const rawUrl = 'https://example.com/api?start=2026-02-01T00:00:00.000Z&a=b';
+    const item = makeItem(rawUrl, { encodeUrl: true });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toBe('curl -X GET \'https://example.com/api?start=2026-02-01T00%3A00%3A00.000Z&a=b\'');
+  });
+
+  it('should preserve param order in raw URL when encodeUrl is false and params are reverse-alphabetical', () => {
+    const rawUrl = 'https://example.com/api?z=last&a=first&m=middle';
+    const item = makeItem(rawUrl, { encodeUrl: false });
+
+    const result = generateSnippet({ language, item, collection: baseCollection, shouldInterpolate: false });
+    expect(result).toBe(`curl -X GET '${rawUrl}'`);
   });
 });

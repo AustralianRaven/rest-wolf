@@ -1,6 +1,3 @@
-import cloneDeep from 'lodash/cloneDeep';
-import { resolvePath } from 'utils/filesystem';
-
 export const sendNetworkRequest = async (item, collection, environment, runtimeVariables) => {
   return new Promise((resolve, reject) => {
     if (['http-request', 'graphql-request'].includes(item.type)) {
@@ -22,7 +19,8 @@ export const sendNetworkRequest = async (item, collection, environment, runtimeV
             statusText: response.statusText,
             duration: response.duration,
             timeline: response.timeline,
-            stream: response.stream
+            stream: response.stream,
+            requestSent: response.requestSent
           });
         })
         .catch((err) => reject(err));
@@ -143,25 +141,10 @@ export const endGrpcStream = async (requestId) => {
 };
 
 export const loadGrpcMethodsFromProtoFile = async (filePath, collection = null) => {
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const { ipcRenderer } = window;
 
-    // Extract import paths from collection's gRPC config if available
-    let importPaths = [];
-
-    if (collection) {
-      const config = cloneDeep(collection.brunoConfig);
-
-      if (config.protobuf && config.protobuf.importPaths) {
-        // Use Promise.all to wait for all resolvePath calls to complete
-        const enabledImportPaths = config.protobuf.importPaths.filter((importPath) => importPath.enabled);
-        importPaths = await Promise.all(enabledImportPaths.map((importPath) => {
-          return resolvePath(importPath.path, collection.pathname);
-        }));
-      }
-    }
-
-    ipcRenderer.invoke('grpc:load-methods-proto', { filePath, includeDirs: importPaths }).then(resolve).catch(reject);
+    ipcRenderer.invoke('grpc:load-methods-proto', { filePath, collection }).then(resolve).catch(reject);
   });
 };
 

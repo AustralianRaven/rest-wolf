@@ -1,7 +1,7 @@
-import { IconCopy, IconEdit, IconTrash, IconCheck, IconX } from '@tabler/icons';
+import { IconCopy, IconEdit, IconTrash, IconCheck, IconX, IconSearch } from '@tabler/icons';
 import { useEffect, useState, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { renameEnvironment } from 'providers/ReduxStore/slices/collections/actions';
+import { renameEnvironment, updateEnvironmentColor } from 'providers/ReduxStore/slices/collections/actions';
 import {
   addEnvironmentAuthStub,
   removeEnvironmentAuthStub
@@ -12,6 +12,7 @@ import CopyEnvironment from 'components/Environments/EnvironmentSettings/CopyEnv
 import DeleteEnvironment from 'components/Environments/EnvironmentSettings/DeleteEnvironment';
 import EnvironmentVariables from './EnvironmentVariables';
 import CollectionAuth from 'components/CollectionSettings/Auth';
+import ColorPicker from 'components/ColorPicker';
 import StyledWrapper from './StyledWrapper';
 
 const envAuthStubUid = (environmentUid) => `env-auth:${environmentUid}`;
@@ -71,7 +72,7 @@ const EnvironmentAuthPanel = ({ environment, collection, isGlobal }) => {
   );
 };
 
-const EnvironmentTabs = ({ environment, setIsModified, collection }) => {
+const EnvironmentTabs = ({ environment, setIsModified, collection, searchQuery, debouncedSearchQuery }) => {
   const [tab, setTab] = useState('variables');
   return (
     <div className="flex flex-col flex-1" style={{ minHeight: 0 }}>
@@ -93,7 +94,12 @@ const EnvironmentTabs = ({ environment, setIsModified, collection }) => {
       </div>
       <div className="flex flex-col flex-1" style={{ minHeight: 0 }}>
         {tab === 'variables' ? (
-          <EnvironmentVariables environment={environment} setIsModified={setIsModified} collection={collection} />
+          <EnvironmentVariables
+            environment={environment}
+            setIsModified={setIsModified}
+            collection={collection}
+            searchQuery={debouncedSearchQuery}
+          />
         ) : (
           <div className="flex-1 overflow-y-auto">
             <EnvironmentAuthPanel environment={environment} collection={collection} isGlobal={false} />
@@ -104,7 +110,7 @@ const EnvironmentTabs = ({ environment, setIsModified, collection }) => {
   );
 };
 
-const EnvironmentDetails = ({ environment, setIsModified, collection }) => {
+const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuery, setSearchQuery, isSearchExpanded, setIsSearchExpanded, debouncedSearchQuery, searchInputRef }) => {
   const dispatch = useDispatch();
   const environments = collection?.environments || [];
 
@@ -206,6 +212,27 @@ const EnvironmentDetails = ({ environment, setIsModified, collection }) => {
     }
   };
 
+  const handleSearchIconClick = () => {
+    setIsSearchExpanded(true);
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 50);
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery('');
+  };
+
+  const handleSearchBlur = () => {
+    if (searchQuery === '') {
+      setIsSearchExpanded(false);
+    }
+  };
+
+  const handleColorChange = (color) => {
+    dispatch(updateEnvironmentColor(environment.uid, color, collection.uid));
+  };
+
   return (
     <StyledWrapper>
       {openDeleteModal && (
@@ -252,11 +279,46 @@ const EnvironmentDetails = ({ environment, setIsModified, collection }) => {
               </div>
             </>
           ) : (
-            <h2 className="title">{environment.name}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="title">{environment.name}</h2>
+              <ColorPicker color={environment.color} onChange={handleColorChange} />
+            </div>
           )}
         </div>
         {nameError && isRenaming && <div className="title-error">{nameError}</div>}
         <div className="actions">
+          {isSearchExpanded ? (
+            <div className="search-input-wrapper">
+              <IconSearch size={14} strokeWidth={1.5} className="search-icon" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search variables..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onBlur={handleSearchBlur}
+                className="search-input"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck="false"
+              />
+              {searchQuery && (
+                <button
+                  className="clear-search"
+                  onClick={handleClearSearch}
+                  onMouseDown={(e) => e.preventDefault()}
+                  title="Clear search"
+                >
+                  <IconX size={14} strokeWidth={1.5} />
+                </button>
+              )}
+            </div>
+          ) : (
+            <button onClick={handleSearchIconClick} title="Search variables">
+              <IconSearch size={15} strokeWidth={1.5} />
+            </button>
+          )}
           <button onClick={handleRenameClick} title="Rename">
             <IconEdit size={15} strokeWidth={1.5} />
           </button>
@@ -270,7 +332,13 @@ const EnvironmentDetails = ({ environment, setIsModified, collection }) => {
       </div>
 
       <div className="content">
-        <EnvironmentTabs environment={environment} setIsModified={setIsModified} collection={collection} />
+        <EnvironmentTabs
+          environment={environment}
+          setIsModified={setIsModified}
+          collection={collection}
+          searchQuery={searchQuery}
+          debouncedSearchQuery={debouncedSearchQuery}
+        />
       </div>
     </StyledWrapper>
   );

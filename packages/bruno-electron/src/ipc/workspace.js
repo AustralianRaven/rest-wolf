@@ -5,11 +5,12 @@ const archiver = require('archiver');
 const extractZip = require('extract-zip');
 const { ipcMain, dialog } = require('electron');
 const isDev = require('electron-is-dev');
-const { createDirectory, sanitizeName } = require('../utils/filesystem');
+const { createDirectory, sanitizeName, writeFile, DEFAULT_GITIGNORE } = require('../utils/filesystem');
 const yaml = require('js-yaml');
 const LastOpenedWorkspaces = require('../store/last-opened-workspaces');
 const { defaultWorkspaceManager } = require('../store/default-workspace');
 const { globalEnvironmentsManager } = require('../store/workspace-environments');
+const { globalEnvironmentsStore } = require('../store/global-environments');
 
 const {
   createWorkspaceConfig,
@@ -20,31 +21,23 @@ const {
   updateWorkspaceDocs,
   addCollectionToWorkspace,
   removeCollectionFromWorkspace,
+  setCollectionGitRemote,
+  clearCollectionGitRemote,
+  reorderWorkspaceCollections,
   getWorkspaceCollections,
+  resolveAndFilterWorkspaceCollections,
   normalizeCollectionEntry,
   validateWorkspacePath,
   validateWorkspaceDirectory,
   getWorkspaceUid
 } = require('../utils/workspace-config');
 
-const { isValidCollectionDirectory } = require('../utils/filesystem');
-
 const DEFAULT_WORKSPACE_NAME = 'My Workspace';
 
 const prepareWorkspaceConfigForClient = (workspaceConfig, workspacePath, isDefault) => {
-  const collections = workspaceConfig.collections || [];
-  const filteredCollections = collections
-    .map((collection) => {
-      if (collection.path && !path.isAbsolute(collection.path)) {
-        return { ...collection, path: path.resolve(workspacePath, collection.path) };
-      }
-      return collection;
-    })
-    .filter((collection) => collection.path && isValidCollectionDirectory(collection.path));
-
   const config = {
     ...workspaceConfig,
-    collections: filteredCollections
+    collections: resolveAndFilterWorkspaceCollections(workspacePath, workspaceConfig.collections)
   };
 
   if (isDefault) {
@@ -86,6 +79,7 @@ const registerWorkspaceIpc = (mainWindow, workspaceWatcher) => {
         const workspaceConfig = createWorkspaceConfig(workspaceName);
 
         await writeWorkspaceConfig(dirPath, workspaceConfig);
+        await writeFile(path.join(dirPath, '.gitignore'), DEFAULT_GITIGNORE);
 
         lastOpenedWorkspaces.add(dirPath);
 
@@ -189,6 +183,18 @@ const registerWorkspaceIpc = (mainWindow, workspaceWatcher) => {
     }
   });
 
+  ipcMain.handle('renderer:reorder-workspace-collections', async (event, workspacePath, collectionPaths) => {
+    try {
+      if (!workspacePath) {
+        throw new Error('Workspace path is undefined');
+      }
+      validateWorkspacePath(workspacePath);
+      await reorderWorkspaceCollections(workspacePath, collectionPaths);
+    } catch (error) {
+      throw error;
+    }
+  });
+
   ipcMain.handle('renderer:load-workspace-apispecs', async (event, workspacePath) => {
     try {
       if (!workspacePath) {
@@ -210,15 +216,17 @@ const registerWorkspaceIpc = (mainWindow, workspaceWatcher) => {
 
       const specs = workspaceConfig.specs || [];
 
-      const resolvedSpecs = specs.map((spec) => {
-        if (spec.path && !path.isAbsolute(spec.path)) {
-          return {
-            ...spec,
-            path: path.join(workspacePath, spec.path)
-          };
-        }
-        return spec;
-      });
+      const resolvedSpecs = specs
+        .map((spec) => {
+          if (spec.path && !path.isAbsolute(spec.path)) {
+            return {
+              ...spec,
+              path: path.join(workspacePath, spec.path)
+            };
+          }
+          return spec;
+        })
+        .filter((spec) => spec.path && fs.existsSync(spec.path));
 
       return resolvedSpecs;
     } catch (error) {
@@ -264,6 +272,7 @@ const registerWorkspaceIpc = (mainWindow, workspaceWatcher) => {
   ipcMain.handle('renderer:close-workspace', async (event, workspacePath) => {
     try {
       lastOpenedWorkspaces.remove(workspacePath);
+      globalEnvironmentsStore.removeActiveGlobalEnvironmentUidForWorkspace(workspacePath);
 
       if (workspaceWatcher) {
         workspaceWatcher.removeWatcher(workspacePath);
@@ -452,14 +461,6 @@ const registerWorkspaceIpc = (mainWindow, workspaceWatcher) => {
     }
   });
 
-  ipcMain.handle('renderer:select-workspace-environment', async (event, workspacePath, environmentUid) => {
-    try {
-      return await globalEnvironmentsManager.selectGlobalEnvironment(workspacePath, { environmentUid });
-    } catch (error) {
-      throw error;
-    }
-  });
-
   ipcMain.handle('renderer:import-workspace-environment', async (event, workspacePath, environmentData) => {
     try {
       return await globalEnvironmentsManager.createGlobalEnvironment(workspacePath, {
@@ -566,6 +567,42 @@ const registerWorkspaceIpc = (mainWindow, workspaceWatcher) => {
       const configForClient = prepareWorkspaceConfigForClient(result.updatedConfig, workspacePath, isDefault);
       mainWindow.webContents.send('main:workspace-config-updated', workspacePath, correctWorkspaceUid, configForClient);
 
+      return true;
+    } catch (error) {
+      throw error;
+    }
+  });
+
+  const broadcastWorkspaceConfig = (workspacePath, config) => {
+    const workspaceUid = getWorkspaceUid(workspacePath);
+    const isDefault = workspaceUid === 'default';
+    const configForClient = prepareWorkspaceConfigForClient(config, workspacePath, isDefault);
+    mainWindow.webContents.send('main:workspace-config-updated', workspacePath, workspaceUid, configForClient);
+  };
+
+  ipcMain.handle('renderer:connect-collection-to-git', async (event, workspacePath, collectionPath, remoteUrl) => {
+    try {
+      if (typeof remoteUrl !== 'string' || remoteUrl.trim() === '') {
+        throw new Error('A Git remote URL is required');
+      }
+
+      const trimmedUrl = remoteUrl.trim();
+      if (!/^(https?:\/\/|git@|ssh:\/\/|git:\/\/).+/.test(trimmedUrl)) {
+        throw new Error('Invalid Git remote URL');
+      }
+
+      const updatedConfig = await setCollectionGitRemote(workspacePath, collectionPath, trimmedUrl);
+      broadcastWorkspaceConfig(workspacePath, updatedConfig);
+      return true;
+    } catch (error) {
+      throw error;
+    }
+  });
+
+  ipcMain.handle('renderer:disconnect-collection-from-git', async (event, workspacePath, collectionPath) => {
+    try {
+      const updatedConfig = await clearCollectionGitRemote(workspacePath, collectionPath);
+      broadcastWorkspaceConfig(workspacePath, updatedConfig);
       return true;
     } catch (error) {
       throw error;
@@ -692,6 +729,8 @@ const registerWorkspaceIpc = (mainWindow, workspaceWatcher) => {
     } catch (error) {
       console.error('Error initializing workspaces:', error);
     }
+
+    ipcMain.emit('main:workspaces-ready', win);
   });
 };
 

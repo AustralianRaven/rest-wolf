@@ -59,8 +59,6 @@ class SingleLineEditor extends Component {
       readOnly: this.props.readOnly,
       extraKeys: {
         'Enter': runHandler,
-        'Ctrl-Enter': runHandler,
-        'Cmd-Enter': runHandler,
         'Alt-Enter': () => {
           if (this.props.allowNewlines) {
             this.editor.setValue(this.editor.getValue() + '\n');
@@ -69,9 +67,6 @@ class SingleLineEditor extends Component {
             this.props.onRun();
           }
         },
-        'Shift-Enter': runHandler,
-        'Cmd-S': saveHandler,
-        'Ctrl-S': saveHandler,
         'Cmd-F': noopHandler,
         'Ctrl-F': noopHandler,
         // Tabbing disabled to make tabindex work
@@ -99,6 +94,7 @@ class SingleLineEditor extends Component {
     this.editor.setValue(String(this.props.value ?? ''));
     this.editor.on('change', this._onEdit);
     this.editor.on('paste', this._onPaste);
+    this.editor.on('blur', this._onBlur);
     this.addOverlay(variables);
     this._enableMaskedEditor(this.props.isSecret);
     this.setState({ maskInput: this.props.isSecret });
@@ -108,6 +104,12 @@ class SingleLineEditor extends Component {
       this._updateNewlineMarkers();
     }
     setupLinkAware(this.editor);
+
+    // Add mousetrap class so Mousetrap captures shortcuts even when CodeMirror is focused
+    const cmInput = this.editor.getInputField();
+    if (cmInput) {
+      cmInput.classList.add('mousetrap');
+    }
   }
 
   /** Enable or disable masking the rendered content of the editor */
@@ -123,6 +125,12 @@ class SingleLineEditor extends Component {
         this.maskedEditor.destroy();
         this.maskedEditor = null;
       }
+    }
+  };
+
+  _onBlur = () => {
+    if (this.editor) {
+      this.editor.setCursor(this.editor.getCursor());
     }
   };
 
@@ -171,8 +179,12 @@ class SingleLineEditor extends Component {
     if (this.props.value !== prevProps.value && this.props.value !== this.cachedValue && this.editor) {
       const cursor = this.editor.getCursor();
       this.cachedValue = String(this.props.value);
-      this.editor.setValue(String(this.props.value ?? ''));
+      this.editor.setValue(String(this.props.value) || '');
       this.editor.setCursor(cursor);
+      // Re-apply masking after setValue() since it destroys all CodeMirror marks
+      if (this.maskedEditor && this.maskedEditor.isEnabled()) {
+        this.maskedEditor.update();
+      }
 
       // Update newline markers after value change
       if (this.props.showNewlineArrow) {
@@ -201,6 +213,7 @@ class SingleLineEditor extends Component {
       }
       this.editor.off('change', this._onEdit);
       this.editor.off('paste', this._onPaste);
+      this.editor.off('blur', this._onBlur);
       this._clearNewlineMarkers();
       this.editor.getWrapperElement().remove();
       this.editor = null;

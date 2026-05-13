@@ -1,6 +1,6 @@
 import { collectionSchema, environmentSchema, itemSchema } from '@usebruno/schema';
 import { parseQueryParams, extractPromptVariables } from '@usebruno/common/utils';
-import { REQUEST_TYPES } from 'utils/common/constants';
+import { REQUEST_TYPES, DEFAULT_COLLECTION_FORMAT } from 'utils/common/constants';
 import cloneDeep from 'lodash/cloneDeep';
 import filter from 'lodash/filter';
 import find from 'lodash/find';
@@ -10,6 +10,7 @@ import trim from 'lodash/trim';
 import path, { normalizePath } from 'utils/common/path';
 import { insertTaskIntoQueue, toggleSidebarCollapse } from 'providers/ReduxStore/slices/app';
 import toast from 'react-hot-toast';
+import IpcErrorModal from 'components/Errors/IpcErrorModal/index';
 import {
   findCollectionByUid,
   findEnvironmentInCollection,
@@ -20,7 +21,8 @@ import {
   isItemARequest,
   getAllVariables,
   transformRequestToSaveToFilesystem,
-  transformCollectionRootToSave
+  transformCollectionRootToSave,
+  flattenItems
 } from 'utils/collections';
 import { uuid, waitForNextTick } from 'utils/common';
 import { cancelNetworkRequest, connectWS, sendGrpcRequest, sendNetworkRequest, sendWsRequest } from 'utils/network/index';
@@ -35,13 +37,14 @@ import {
   sortCollections as _sortCollections,
   updateCollectionMountStatus,
   moveCollection,
+  workspaceEnvUpdateEvent,
   requestCancelled,
   resetRunResults,
   responseReceived,
   updateLastAction,
   setCollectionSecurityConfig,
   collectionAddOauth2CredentialsByUrl,
-  collectionClearOauth2CredentialsByUrl,
+  collectionClearOauth2CredentialsByUrlAndCredentialsId,
   initRunRequestEvent,
   updateRunnerConfiguration as _updateRunnerConfiguration,
   updateActiveConnections,
@@ -50,6 +53,7 @@ import {
   _setEnvironmentAuthMode,
   replaceEnvironmentAuthStubAuth,
   setCollectionEnvironmentAuth,
+  updateEnvironmentColor as _updateEnvironmentColor,
   saveCollectionDraft,
   saveFolderDraft,
   addVar,
@@ -57,11 +61,15 @@ import {
   addFolderVar,
   updateFolderVar,
   addCollectionVar,
-  updateCollectionVar
+  updateCollectionVar,
+  addTransientDirectory,
+  addSaveTransientRequestModal,
+  updatePathParam
 } from './index';
 
 import { each } from 'lodash';
-import { closeAllCollectionTabs, updateResponsePaneScrollPosition } from 'providers/ReduxStore/slices/tabs';
+import { closeAllCollectionTabs, closeTabs as _closeTabs, focusTab, restoreTabs, reopenLastClosedTab } from 'providers/ReduxStore/slices/tabs';
+import { clearOpenApiSyncTabState } from 'providers/ReduxStore/slices/openapi-sync';
 import { removeCollectionFromWorkspace } from 'providers/ReduxStore/slices/workspaces';
 import { resolveRequestFilename } from 'utils/common/platform';
 import { interpolateUrl, parsePathParams, splitOnFirst } from 'utils/url/index';
@@ -69,7 +77,6 @@ import { sendCollectionOauth2Request as _sendCollectionOauth2Request } from 'uti
 import {
   getGlobalEnvironmentVariables,
   findCollectionByPathname,
-  findEnvironmentInCollectionByName,
   getReorderedItemsInTargetDirectory,
   resetSequencesInFolder,
   getReorderedItemsInSourceDirectory,
@@ -85,6 +92,14 @@ import { resolveInheritedAuth } from 'utils/auth';
 import { addTab } from 'providers/ReduxStore/slices/tabs';
 import { updateSettingsSelectedTab } from './index';
 import { saveGlobalEnvironment } from 'providers/ReduxStore/slices/global-environments';
+import { getTabToFocusForCurrentWorkspace } from 'providers/ReduxStore/slices/workspaces/getTabToFocusForCurrentWorkspace';
+import { clearPersistedScope } from 'hooks/usePersistedState/PersistedScopeProvider';
+import {
+  getCollectionEnvironmentPath,
+  findCollectionEnvironmentFromSnapshot,
+  hydrateCollectionTabs,
+  hydrateSnapshotLookups
+} from 'utils/snapshot';
 
 // generate a unique names
 const generateUniqueName = (originalName, existingItems, isFolder) => {
@@ -138,7 +153,7 @@ export const renameCollection = (newName, collectionUid) => (dispatch, getState)
 export const saveRequest = (itemUid, collectionUid, silent = false) => (dispatch, getState) => {
   const state = getState();
   const collection = findCollectionByUid(state.collections.collections, collectionUid);
-
+  const tempDirectory = state.collections.tempDirectories?.[collectionUid];
   return new Promise((resolve, reject) => {
     if (!collection) {
       return reject(new Error('Collection not found'));
@@ -148,6 +163,12 @@ export const saveRequest = (itemUid, collectionUid, silent = false) => (dispatch
     const item = findItemInCollection(collectionCopy, itemUid);
     if (!item) {
       return reject(new Error('Not able to locate item'));
+    }
+
+    const isTransient = tempDirectory && item.pathname.startsWith(tempDirectory);
+    if (isTransient) {
+      dispatch(addSaveTransientRequestModal({ item, collection }));
+      return reject();
     }
 
     const itemToSave = transformRequestToSaveToFilesystem(item);
@@ -520,6 +541,10 @@ export const sendRequest = (item, collectionUid) => (dispatch, getState) => {
       return reject(new Error('Collection not found'));
     }
 
+    if (item.response?.stream?.running && item.cancelTokenUid) {
+      await dispatch(cancelRequest(item.cancelTokenUid, item, collection));
+    }
+
     let collectionCopy = cloneDeep(collection);
 
     const itemCopy = cloneDeep(item);
@@ -544,13 +569,6 @@ export const sendRequest = (item, collectionUid) => (dispatch, getState) => {
       }
       return reject(error);
     }
-
-    await dispatch(
-      updateResponsePaneScrollPosition({
-        uid: state.tabs.activeTabUid,
-        scrollY: 0
-      })
-    );
 
     await dispatch(
       initRunRequestEvent({
@@ -578,10 +596,11 @@ export const sendRequest = (item, collectionUid) => (dispatch, getState) => {
     } else {
       sendNetworkRequest(itemCopy, collectionCopy, environment, collectionCopy.runtimeVariables)
         .then((response) => {
+          const { requestSent, ...responseData } = response;
           // Ensure any timestamps in the response are converted to numbers
           const serializedResponse = {
-            ...response,
-            timeline: response.timeline?.map((entry) => ({
+            ...responseData,
+            timeline: responseData.timeline?.map((entry) => ({
               ...entry,
               timestamp: entry.timestamp instanceof Date ? entry.timestamp.getTime() : entry.timestamp
             }))
@@ -591,18 +610,23 @@ export const sendRequest = (item, collectionUid) => (dispatch, getState) => {
             responseReceived({
               itemUid,
               collectionUid,
-              response: serializedResponse
+              response: serializedResponse,
+              requestSent
             })
           );
         })
         .then(resolve)
         .catch((err) => {
+          const request = itemCopy.draft?.request || itemCopy.request;
+          const requestSent = request ? { url: request.url, method: request.method } : undefined;
+
           if (err && err.message === 'Error invoking remote method \'send-http-request\': Error: Request cancelled') {
             dispatch(
               responseReceived({
                 itemUid,
                 collectionUid,
-                response: null
+                response: null,
+                requestSent
               })
             );
             return;
@@ -620,7 +644,8 @@ export const sendRequest = (item, collectionUid) => (dispatch, getState) => {
             responseReceived({
               itemUid,
               collectionUid,
-              response: errorResponse
+              response: errorResponse,
+              requestSent
             })
           );
         });
@@ -629,7 +654,7 @@ export const sendRequest = (item, collectionUid) => (dispatch, getState) => {
 };
 
 export const cancelRequest = (cancelTokenUid, item, collection) => (dispatch) => {
-  cancelNetworkRequest(cancelTokenUid)
+  return cancelNetworkRequest(cancelTokenUid)
     .then(() => {
       dispatch(
         requestCancelled({
@@ -823,9 +848,8 @@ export const renameItem
           return ipcRenderer
             .invoke('renderer:rename-item-filename', { oldPath: item.pathname, newPath, newName, newFilename, collectionPathname: collection.pathname })
             .catch((err) => {
-              toast.error('Failed to rename the file');
               console.error(err);
-              throw new Error('Failed to rename the file');
+              throw new Error('Duplicate request names are not allowed under the same folder');
             });
         };
 
@@ -1105,6 +1129,10 @@ export const handleCollectionItemDrop
       const draggedItemDirectory = findParentItemInCollection(sourceCollection, draggedItemUid) || sourceCollection;
       const draggedItemDirectoryItems = cloneDeep(draggedItemDirectory.items);
 
+      const sourceFormat = sourceCollection?.format || 'bru';
+      const targetFormat = collection?.format || 'bru';
+      const isCrossFormatMove = isCrossCollectionMove && sourceFormat !== targetFormat;
+
       const handleMoveToNewLocation = async ({
         draggedItem,
         draggedItemDirectoryItems,
@@ -1117,10 +1145,22 @@ export const handleCollectionItemDrop
         const { pathname: draggedItemPathname, uid: draggedItemUid } = draggedItem;
 
         const newDirname = path.dirname(newPathname);
-        await dispatch(moveItem({
-          targetDirname: newDirname,
-          sourcePathname: draggedItemPathname
-        }));
+
+        if (isCrossFormatMove && isItemARequest(draggedItem)) {
+          const { ipcRenderer } = window;
+          const result = await ipcRenderer.invoke('renderer:move-item-cross-format', {
+            targetDirname: newDirname,
+            sourcePathname: draggedItemPathname,
+            sourceFormat,
+            targetFormat
+          });
+          newPathname = result.newPathname;
+        } else {
+          await dispatch(moveItem({
+            targetDirname: newDirname,
+            sourcePathname: draggedItemPathname
+          }));
+        }
 
         // Update sequences in the source directory
         if (draggedItemDirectoryItems?.length) {
@@ -1136,7 +1176,7 @@ export const handleCollectionItemDrop
 
         // Update sequences in the target directory (if dropping adjacent)
         if (dropType === 'adjacent') {
-          const targetItemSequence = targetItemDirectoryItems.findIndex((i) => i.uid === targetItemUid)?.seq;
+          const targetItemSequence = targetItemDirectoryItems.find((i) => i.uid === targetItemUid)?.seq;
 
           const draggedItemWithNewPathAndSequence = {
             ...draggedItem,
@@ -1183,6 +1223,19 @@ export const handleCollectionItemDrop
           });
           if (!newPathname) return;
           if (targetItemPathname?.startsWith(draggedItemPathname)) return;
+
+          if (isCrossFormatMove && isItemAFolder(draggedItem)) {
+            toast.error('Moving folders between collections with different formats is not supported');
+            return;
+          }
+
+          // Discard operation if dragging a root item to the collection name (same location)
+          const isTargetTheCollection = targetItemPathname === collection.pathname;
+          const isDraggedItemAtRoot = draggedItemDirectory === sourceCollection;
+          if (isTargetTheCollection && isDraggedItemAtRoot && !isCrossCollectionMove) {
+            return;
+          }
+
           if (newPathname !== draggedItemPathname) {
             await handleMoveToNewLocation({
               targetItem,
@@ -1195,6 +1248,11 @@ export const handleCollectionItemDrop
           } else {
             await handleReorderInSameLocation({ draggedItem, targetItemDirectoryItems, targetItem });
           }
+
+          if (isCrossCollectionMove) {
+            dispatch(closeTabs({ tabUids: [draggedItemUid] }));
+          }
+
           resolve();
         } catch (error) {
           console.error(error);
@@ -1233,7 +1291,8 @@ export const newHttpRequest = (params) => (dispatch, getState) => {
     headers,
     body,
     auth,
-    settings
+    settings,
+    isTransient = false
   } = params;
 
   return new Promise((resolve, reject) => {
@@ -1242,6 +1301,9 @@ export const newHttpRequest = (params) => (dispatch, getState) => {
     if (!collection) {
       return reject(new Error('Collection not found'));
     }
+
+    // Get temp directory if isTransient is true
+    const tempDirectory = isTransient ? state.collections.tempDirectories?.[collectionUid] : null;
 
     const parts = splitOnFirst(requestUrl, '?');
     const queryParams = parseQueryParams(parts[1]);
@@ -1263,6 +1325,7 @@ export const newHttpRequest = (params) => (dispatch, getState) => {
       type: requestType,
       name: requestName,
       filename,
+      isTransient: isTransient,
       request: {
         method: requestMethod,
         url: requestUrl,
@@ -1293,8 +1356,46 @@ export const newHttpRequest = (params) => (dispatch, getState) => {
     };
 
     // itemUid is null when we are creating a new request at the root level
+    // For transient requests, itemUid is always null
     const resolvedFilename = resolveRequestFilename(filename, collection.format);
-    if (!itemUid) {
+
+    if (isTransient) {
+      // Transient requests are always created in temp directory
+      // Check for duplicates only among other transient requests
+      const allItems = flattenItems(collection.items);
+      const transientRequests = filter(
+        allItems,
+        (i) => isItemARequest(i) && i.pathname && i.pathname.startsWith(tempDirectory)
+      );
+      const reqWithSameNameExists = find(transientRequests, (i) => trim(i.filename) === trim(resolvedFilename));
+      const items = filter(collection.items, (i) => isItemAFolder(i) || isItemARequest(i));
+      item.seq = items.length + 1;
+
+      if (!reqWithSameNameExists) {
+        const fullName = path.join(tempDirectory, resolvedFilename);
+        const { ipcRenderer } = window;
+
+        ipcRenderer
+          .invoke('renderer:new-request', fullName, item)
+          .then(() => {
+            // task middleware will track this and open the new request in a new tab once request is created
+            dispatch(
+              insertTaskIntoQueue({
+                uid: uuid(),
+                type: 'OPEN_REQUEST',
+                collectionUid,
+                itemPathname: fullName,
+                preview: false
+              })
+            );
+            resolve();
+          })
+          .catch(reject);
+      } else {
+        return reject(new Error('Duplicate request names are not allowed under the same folder'));
+      }
+    } else if (!itemUid) {
+      // Regular request at root level
       const reqWithSameNameExists = find(
         collection.items,
         (i) => i.type !== 'folder' && trim(i.filename) === trim(resolvedFilename)
@@ -1360,7 +1461,7 @@ export const newHttpRequest = (params) => (dispatch, getState) => {
 };
 
 export const newGrpcRequest = (params) => (dispatch, getState) => {
-  const { requestName, filename, requestUrl, collectionUid, body, auth, headers, itemUid } = params;
+  const { requestName, filename, requestUrl, collectionUid, body, auth, headers, itemUid, isTransient = false } = params;
 
   return new Promise((resolve, reject) => {
     const state = getState();
@@ -1368,6 +1469,10 @@ export const newGrpcRequest = (params) => (dispatch, getState) => {
     if (!collection) {
       return reject(new Error('Collection not found'));
     }
+
+    // Get temp directory if isTransient is true
+    const tempDirectory = isTransient ? state.collections.tempDirectories?.[collectionUid] : null;
+
     // do we need to handle query, path params for grpc requests?
     // skipping for now
 
@@ -1376,6 +1481,7 @@ export const newGrpcRequest = (params) => (dispatch, getState) => {
       name: requestName,
       filename,
       type: 'grpc-request',
+      isTransient: isTransient,
       headers: headers ?? [],
       request: {
         url: requestUrl,
@@ -1405,42 +1511,85 @@ export const newGrpcRequest = (params) => (dispatch, getState) => {
     };
 
     // itemUid is null when we are creating a new request at the root level
-    const parentItem = itemUid ? findItemInCollection(collection, itemUid) : collection;
+    // For transient requests, itemUid is always null
     const resolvedFilename = resolveRequestFilename(filename, collection.format);
 
-    if (!parentItem) {
-      return reject(new Error('Parent item not found'));
+    if (isTransient) {
+      // Transient requests are always created in temp directory
+      // Check for duplicates only among other transient requests
+      const allItems = flattenItems(collection.items);
+      const transientRequests = filter(
+        allItems,
+        (i) => isItemARequest(i) && i.pathname && i.pathname.startsWith(tempDirectory)
+      );
+      const reqWithSameNameExists = find(transientRequests, (i) => trim(i.filename) === trim(resolvedFilename));
+
+      if (reqWithSameNameExists) {
+        return reject(new Error('Duplicate request names are not allowed under the same folder'));
+      }
+
+      const items = filter(collection.items, (i) => isItemAFolder(i) || isItemARequest(i));
+      item.seq = items.length + 1;
+      const fullName = path.join(tempDirectory, resolvedFilename);
+      const { ipcRenderer } = window;
+      ipcRenderer
+        .invoke('renderer:new-request', fullName, item)
+        .then(() => {
+          // task middleware will track this and open the new request in a new tab once request is created
+          dispatch(
+            insertTaskIntoQueue({
+              uid: uuid(),
+              type: 'OPEN_REQUEST',
+              collectionUid,
+              itemPathname: fullName,
+              preview: false
+            })
+          );
+          resolve();
+        })
+        .catch(reject);
+    } else {
+      // Regular request (can be at root or in a folder)
+      const parentItem = itemUid ? findItemInCollection(collection, itemUid) : collection;
+
+      if (!parentItem) {
+        return reject(new Error('Parent item not found'));
+      }
+
+      const reqWithSameNameExists = find(
+        parentItem.items,
+        (i) => i.type !== 'folder' && trim(i.filename) === trim(resolvedFilename)
+      );
+
+      if (reqWithSameNameExists) {
+        return reject(new Error('Duplicate request names are not allowed under the same folder'));
+      }
+
+      const items = filter(parentItem.items, (i) => isItemAFolder(i) || isItemARequest(i));
+      item.seq = items.length + 1;
+      const fullName = path.join(parentItem.pathname, resolvedFilename);
+      const { ipcRenderer } = window;
+      ipcRenderer
+        .invoke('renderer:new-request', fullName, item)
+        .then(() => {
+          // task middleware will track this and open the new request in a new tab once request is created
+          dispatch(
+            insertTaskIntoQueue({
+              uid: uuid(),
+              type: 'OPEN_REQUEST',
+              collectionUid,
+              itemPathname: fullName
+            })
+          );
+          resolve();
+        })
+        .catch(reject);
     }
-
-    const reqWithSameNameExists = find(parentItem.items,
-      (i) => i.type !== 'folder' && trim(i.filename) === trim(resolvedFilename));
-
-    if (reqWithSameNameExists) {
-      return reject(new Error('Duplicate request names are not allowed under the same folder'));
-    }
-
-    const items = filter(parentItem.items, (i) => isItemAFolder(i) || isItemARequest(i));
-    item.seq = items.length + 1;
-    const fullName = path.join(parentItem.pathname, resolvedFilename);
-    const { ipcRenderer } = window;
-    ipcRenderer
-      .invoke('renderer:new-request', fullName, item)
-      .then(() => {
-        // task middleware will track this and open the new request in a new tab once request is created
-        dispatch(insertTaskIntoQueue({
-          uid: uuid(),
-          type: 'OPEN_REQUEST',
-          collectionUid,
-          itemPathname: fullName
-        }));
-        resolve();
-      })
-      .catch(reject);
   });
 };
 
 export const newWsRequest = (params) => (dispatch, getState) => {
-  const { requestName, requestMethod, filename, requestUrl, collectionUid, body, auth, headers, itemUid } = params;
+  const { requestName, requestMethod, filename, requestUrl, collectionUid, body, auth, headers, itemUid, isTransient = false } = params;
 
   return new Promise((resolve, reject) => {
     const state = getState();
@@ -1449,11 +1598,15 @@ export const newWsRequest = (params) => (dispatch, getState) => {
       return reject(new Error('Collection not found'));
     }
 
+    // Get temp directory if isTransient is true
+    const tempDirectory = isTransient ? state.collections.tempDirectories?.[collectionUid] : null;
+
     const item = {
       uid: uuid(),
       name: requestName,
       filename,
       type: 'ws-request',
+      isTransient: isTransient,
       headers: headers ?? [],
       request: {
         url: requestUrl,
@@ -1486,37 +1639,80 @@ export const newWsRequest = (params) => (dispatch, getState) => {
     };
 
     // itemUid is null when we are creating a new request at the root level
-    const parentItem = itemUid ? findItemInCollection(collection, itemUid) : collection;
+    // For transient requests, itemUid is always null
     const resolvedFilename = resolveRequestFilename(filename, collection.format);
 
-    if (!parentItem) {
-      return reject(new Error('Parent item not found'));
+    if (isTransient) {
+      // Transient requests are always created in temp directory
+      // Check for duplicates only among other transient requests
+      const allItems = flattenItems(collection.items);
+      const transientRequests = filter(
+        allItems,
+        (i) => isItemARequest(i) && i.pathname && i.pathname.startsWith(tempDirectory)
+      );
+      const reqWithSameNameExists = find(transientRequests, (i) => trim(i.filename) === trim(resolvedFilename));
+
+      if (reqWithSameNameExists) {
+        return reject(new Error('Duplicate request names are not allowed under the same folder'));
+      }
+
+      const items = filter(collection.items, (i) => isItemAFolder(i) || isItemARequest(i));
+      item.seq = items.length + 1;
+      const fullName = path.join(tempDirectory, resolvedFilename);
+      const { ipcRenderer } = window;
+      ipcRenderer
+        .invoke('renderer:new-request', fullName, item)
+        .then(() => {
+          // task middleware will track this and open the new request in a new tab once request is created
+          dispatch(
+            insertTaskIntoQueue({
+              uid: uuid(),
+              type: 'OPEN_REQUEST',
+              collectionUid,
+              itemPathname: fullName,
+              preview: false
+            })
+          );
+          resolve();
+        })
+        .catch(reject);
+    } else {
+      // Regular request (can be at root or in a folder)
+      const parentItem = itemUid ? findItemInCollection(collection, itemUid) : collection;
+
+      if (!parentItem) {
+        return reject(new Error('Parent item not found'));
+      }
+
+      const reqWithSameNameExists = find(
+        parentItem.items,
+        (i) => i.type !== 'folder' && trim(i.filename) === trim(resolvedFilename)
+      );
+
+      if (reqWithSameNameExists) {
+        return reject(new Error('Duplicate request names are not allowed under the same folder'));
+      }
+
+      const items = filter(parentItem.items, (i) => isItemAFolder(i) || isItemARequest(i));
+      item.seq = items.length + 1;
+      const fullName = path.join(parentItem.pathname, resolvedFilename);
+      const { ipcRenderer } = window;
+      ipcRenderer
+        .invoke('renderer:new-request', fullName, item)
+        .then(() => {
+          // task middleware will track this and open the new request in a new tab once request is created
+          dispatch(
+            insertTaskIntoQueue({
+              uid: uuid(),
+              type: 'OPEN_REQUEST',
+              collectionUid,
+              itemPathname: fullName
+            })
+          );
+          resolve();
+        })
+        .catch(reject);
     }
-
-    const reqWithSameNameExists = find(parentItem.items,
-      (i) => i.type !== 'folder' && trim(i.filename) === trim(resolvedFilename));
-
-    if (reqWithSameNameExists) {
-      return reject(new Error('Duplicate request names are not allowed under the same folder'));
-    }
-
-    const items = filter(parentItem.items, (i) => isItemAFolder(i) || isItemARequest(i));
-    item.seq = items.length + 1;
-    const fullName = path.join(parentItem.pathname, resolvedFilename);
-    const { ipcRenderer } = window;
-    ipcRenderer
-      .invoke('renderer:new-request', fullName, item)
-      .then(() => {
-        // task middleware will track this and open the new request in a new tab once request is created
-        dispatch(insertTaskIntoQueue({
-          uid: uuid(),
-          type: 'OPEN_REQUEST',
-          collectionUid,
-          itemPathname: fullName
-        }));
-        resolve();
-      })
-      .catch(reject);
   });
 };
 
@@ -1625,7 +1821,7 @@ export const addEnvironment = (name, collectionUid) => (dispatch, getState) => {
   });
 };
 
-export const importEnvironment = ({ name, variables, collectionUid }) => (dispatch, getState) => {
+export const importEnvironment = ({ name, variables, color, collectionUid }) => (dispatch, getState) => {
   return new Promise((resolve, reject) => {
     const state = getState();
     const collection = findCollectionByUid(state.collections.collections, collectionUid);
@@ -1637,7 +1833,7 @@ export const importEnvironment = ({ name, variables, collectionUid }) => (dispat
 
     const { ipcRenderer } = window;
     ipcRenderer
-      .invoke('renderer:create-environment', collection.pathname, sanitizedName, variables)
+      .invoke('renderer:create-environment', collection.pathname, sanitizedName, variables, color)
       .then(
         dispatch(
           updateLastAction({
@@ -1874,6 +2070,31 @@ export const saveEnvironment = (variables, environmentUid, collectionUid) => (di
   });
 };
 
+export const updateEnvironmentColor = (environmentUid, color, collectionUid) => (dispatch, getState) => {
+  return new Promise((resolve, reject) => {
+    const state = getState();
+    const collection = findCollectionByUid(state.collections.collections, collectionUid);
+    if (!collection) {
+      return reject(new Error('Collection not found'));
+    }
+
+    const collectionCopy = cloneDeep(collection);
+    const environment = findEnvironmentInCollection(collectionCopy, environmentUid);
+    if (!environment) {
+      return reject(new Error('Environment not found'));
+    }
+
+    environment.color = color;
+    const { ipcRenderer } = window;
+    ipcRenderer.invoke('renderer:update-environment-color', collection.pathname, environment.name, color)
+      .then(() => {
+        dispatch(_updateEnvironmentColor({ environmentUid, color, collectionUid }));
+        resolve();
+      })
+      .catch(reject);
+  });
+};
+
 /**
  * Update a variable value directly in the file without affecting draft state
  * @param {string} pathname - File path
@@ -1959,7 +2180,7 @@ export const updateVariableInScope = (variableName, newValue, scopeInfo, collect
         return reject(new Error('Process environment variables are read-only'));
       }
 
-      if (type === 'runtime') {
+      if (type === 'runtime' || (collection && collection.runtimeVariables && collection.runtimeVariables[variableName])) {
         toast.error('Runtime variables are set by scripts and cannot be edited');
         return reject(new Error('Runtime variables are read-only'));
       }
@@ -1977,7 +2198,14 @@ export const updateVariableInScope = (variableName, newValue, scopeInfo, collect
             return reject(new Error('Variable not found'));
           }
 
-          const updatedVariables = environment.variables.map((v) => (v.uid === variable.uid ? { ...v, value: newValue } : v));
+          const updatedVariables = environment.variables.map((v) => {
+            if (v.uid === variable.uid) {
+              // Clear ephemeral metadata when user manually edits the value
+              const { ephemeral, persistedValue, ...rest } = v;
+              return { ...rest, value: newValue };
+            }
+            return v;
+          });
 
           return dispatch(saveEnvironment(updatedVariables, environment.uid, collectionUid))
             .then(() => {
@@ -2086,8 +2314,14 @@ export const updateVariableInScope = (variableName, newValue, scopeInfo, collect
             return reject(new Error('Variable not found'));
           }
 
-          const updatedVariables = environment.variables.map((v) =>
-            v.uid === variable.uid ? { ...v, value: newValue } : v);
+          const updatedVariables = environment.variables.map((v) => {
+            if (v.uid === variable.uid) {
+              // Clear ephemeral metadata when user manually edits the value
+              const { ephemeral, persistedValue, ...rest } = v;
+              return { ...rest, value: newValue };
+            }
+            return v;
+          });
 
           return dispatch(saveGlobalEnvironment({ variables: updatedVariables, environmentUid: activeGlobalEnvUid }))
             .then(() => {
@@ -2096,7 +2330,23 @@ export const updateVariableInScope = (variableName, newValue, scopeInfo, collect
             .then(resolve)
             .catch(reject);
         }
+        case 'pathParam': {
+          const { item } = data;
+          const params = item.draft ? get(item, 'draft.request.params', []) : get(item, 'request.params', []);
+          const pathParam = params.find((p) => p.type === 'path' && p.name === variableName);
 
+          if (pathParam) {
+            const updatedParam = { ...pathParam, value: newValue };
+            dispatch(updatePathParam({
+              pathParam: updatedParam,
+              itemUid: item.uid,
+              collectionUid: collection.uid
+            }));
+          }
+          return dispatch(saveRequest(item.uid, collection.uid, true))
+            .then(resolve)
+            .catch(reject);
+        }
         default:
           return reject(new Error(`Unknown scope type: ${type}`));
       }
@@ -2190,16 +2440,20 @@ export const selectEnvironment = (environmentUid, collectionUid) => (dispatch, g
 
     const collectionCopy = cloneDeep(collection);
 
-    const environmentName = environmentUid ? findEnvironmentInCollection(collectionCopy, environmentUid)?.name : null;
+    const environment = environmentUid ? findEnvironmentInCollection(collectionCopy, environmentUid) : null;
 
-    if (environmentUid && !environmentName) {
+    if (environmentUid && !environment) {
       return reject(new Error('Environment not found'));
     }
 
     const { ipcRenderer } = window;
     ipcRenderer.invoke('renderer:update-ui-state-snapshot', {
       type: 'COLLECTION_ENVIRONMENT',
-      data: { collectionPath: collection?.pathname, environmentName }
+      data: {
+        collectionPath: collection?.pathname,
+        environmentPath: getCollectionEnvironmentPath(collection, environment),
+        selectedEnvironment: environment?.name || ''
+      }
     });
 
     dispatch(_selectEnvironment({ environmentUid, collectionUid }));
@@ -2246,6 +2500,8 @@ export const removeCollection = (collectionUid) => (dispatch, getState) => {
             collectionLocation: collection.pathname
           }));
         }
+
+        dispatch(ensureActiveTabInCurrentWorkspace());
 
         // Only remove from Redux if no workspaces remain
         if (!remainingWorkspaces || remainingWorkspaces.length === 0) {
@@ -2368,31 +2624,75 @@ export const updateBrunoConfig = (brunoConfig, collectionUid) => (dispatch, getS
   });
 };
 
+/**
+ * Opens a scratch collection and creates it in Redux state.
+ * This is a simplified version of openCollectionEvent for scratch collections,
+ * without workspace management, toasts, or sidebar toggles.
+ *
+ * @param {string} uid - The unique identifier for the scratch collection
+ * @param {string} pathname - The filesystem path to the scratch collection
+ * @param {Object} brunoConfig - The Bruno configuration object for the collection
+ * @returns {Promise} Resolves when the collection is created, rejects on error
+ */
+export const openScratchCollectionEvent = (uid, pathname, brunoConfig) => (dispatch, getState) => {
+  const { ipcRenderer } = window;
+
+  return new Promise((resolve, reject) => {
+    const state = getState();
+    const existingCollection = state.collections.collections.find(
+      (c) => normalizePath(c.pathname) === normalizePath(pathname)
+    );
+
+    if (existingCollection) {
+      resolve();
+      return;
+    }
+
+    const collection = {
+      version: '1',
+      uid,
+      name: brunoConfig.name,
+      pathname,
+      items: [],
+      runtimeVariables: {},
+      brunoConfig
+    };
+
+    ipcRenderer
+      .invoke('renderer:get-collection-security-config', pathname)
+      .then((securityConfig) => {
+        collectionSchema
+          .validate(collection)
+          .then(() => dispatch(_createCollection({ ...collection, securityConfig })))
+          .then(resolve)
+          .catch(reject);
+      })
+      .catch(reject);
+  });
+};
+
 export const openCollectionEvent = (uid, pathname, brunoConfig) => (dispatch, getState) => {
   const { ipcRenderer } = window;
 
   return new Promise((resolve, reject) => {
     const state = getState();
     const activeWorkspace = state.workspaces.workspaces.find((w) => w.uid === state.workspaces.activeWorkspaceUid);
+    const workspaceProcessEnvVariables = activeWorkspace?.processEnvVariables || {};
 
-    // Check if collection already exists in Redux state
     const existingCollection = state.collections.collections.find(
       (c) => normalizePath(c.pathname) === normalizePath(pathname)
     );
 
-    // Check if collection is already in the current workspace
     const isAlreadyInWorkspace = activeWorkspace?.collections?.some(
       (c) => normalizePath(c.path) === normalizePath(pathname)
     );
 
-    // If collection already exists in Redux AND in current workspace, show toast and return
     if (existingCollection && isAlreadyInWorkspace) {
       toast.success('Collection is already opened');
       resolve();
       return;
     }
 
-    // If collection exists in Redux but not in workspace, add to workspace
     if (existingCollection) {
       if (state.app.sidebarCollapsed) {
         dispatch(toggleSidebarCollapse());
@@ -2415,11 +2715,25 @@ export const openCollectionEvent = (uid, pathname, brunoConfig) => (dispatch, ge
           });
       }
 
-      resolve();
+      dispatch(workspaceEnvUpdateEvent({ processEnvVariables: workspaceProcessEnvVariables }));
+
+      const workspacePathname = activeWorkspace?.pathname || null;
+
+      ipcRenderer.invoke('renderer:snapshot:get')
+        .then((snapshot) => hydrateSnapshotLookups(snapshot || {}))
+        .then((snapshotLookups) => hydrateCollectionTabs(
+          existingCollection,
+          dispatch,
+          restoreTabs,
+          snapshotLookups,
+          workspacePathname,
+          true
+        ))
+        .catch(() => null)
+        .finally(resolve);
       return;
     }
 
-    // Collection doesn't exist - create it
     const collection = {
       version: '1',
       uid: uid,
@@ -2427,6 +2741,7 @@ export const openCollectionEvent = (uid, pathname, brunoConfig) => (dispatch, ge
       pathname: pathname,
       items: [],
       runtimeVariables: {},
+      workspaceProcessEnvVariables,
       brunoConfig: brunoConfig
     };
 
@@ -2445,6 +2760,8 @@ export const openCollectionEvent = (uid, pathname, brunoConfig) => (dispatch, ge
           );
 
           if (currentWorkspace) {
+            ipcRenderer.invoke('renderer:set-collection-workspace', uid, currentWorkspace.pathname);
+
             const alreadyInWorkspace = currentWorkspace.collections?.some(
               (c) => normalizePath(c.path) === normalizePath(pathname)
             );
@@ -2546,10 +2863,18 @@ export const collectionAddEnvFileEvent = (payload) => (dispatch, getState) => {
 
     environmentSchema
       .validate(environment)
-      .then(() =>
+      .then(() => {
+        const environmentWithPath = {
+          ...environment,
+          pathname: meta?.pathname || environment?.pathname
+        };
+
+        return environmentWithPath;
+      })
+      .then((environmentWithPath) =>
         dispatch(
           _collectionAddEnvFileEvent({
-            environment,
+            environment: environmentWithPath,
             collectionUid: meta.collectionUid
           })
         )
@@ -2566,30 +2891,86 @@ export const importCollection = (collection, collectionLocation, options = {}) =
     try {
       const state = getState();
       const activeWorkspace = state.workspaces.workspaces.find((w) => w.uid === state.workspaces.activeWorkspaceUid);
+      const isMultiple = Array.isArray(collection);
 
-      const collectionPath = await ipcRenderer.invoke('renderer:import-collection', collection, collectionLocation, options.format || 'bru');
+      const result = await ipcRenderer.invoke('renderer:import-collection', collection, collectionLocation, {
+        format: options.format || DEFAULT_COLLECTION_FORMAT,
+        rawOpenAPISpec: options.rawOpenAPISpec
+      });
+      const importedPaths = result.success.items;
 
-      if (activeWorkspace && activeWorkspace.pathname && activeWorkspace.type !== 'default') {
-        const workspaceCollection = {
-          name: collection.name,
-          path: collectionPath
-        };
-
-        await ipcRenderer.invoke('renderer:add-collection-to-workspace', activeWorkspace.pathname, workspaceCollection);
+      if (importedPaths.length > 0 && activeWorkspace && activeWorkspace.pathname && activeWorkspace.type !== 'default') {
+        for (const importedItem of importedPaths) {
+          const workspaceCollection = {
+            name: importedItem.name,
+            path: importedItem.path
+          };
+          await ipcRenderer.invoke('renderer:add-collection-to-workspace', activeWorkspace.pathname, workspaceCollection);
+        }
       }
 
-      resolve(collectionPath);
+      resolve(isMultiple ? importedPaths : importedPaths[0]);
     } catch (error) {
       reject(error);
     }
   });
 };
 
+export const importCollectionFromZip = (zipFilePath, collectionLocation) => async (dispatch, getState) => {
+  const { ipcRenderer } = window;
+  const state = getState();
+  const activeWorkspace = state.workspaces.workspaces.find((w) => w.uid === state.workspaces.activeWorkspaceUid);
+
+  const collectionPath = await ipcRenderer.invoke('renderer:import-collection-zip', zipFilePath, collectionLocation);
+
+  if (activeWorkspace && activeWorkspace.pathname && activeWorkspace.type !== 'default') {
+    const collectionName = path.basename(collectionPath);
+    await ipcRenderer.invoke('renderer:add-collection-to-workspace', activeWorkspace.pathname, {
+      name: collectionName,
+      path: collectionPath
+    });
+  }
+
+  return collectionPath;
+};
+
+/**
+ * Updates Redux collection order and persists it to the active workspace's workspace.yml.
+ */
 export const moveCollectionAndPersist
   = ({ draggedItem, targetItem }) =>
     (dispatch, getState) => {
-      dispatch(moveCollection({ draggedItem, targetItem }));
-      return Promise.resolve();
+      const state = getState();
+      const activeWorkspace = state.workspaces.workspaces.find(
+        (w) => w.uid === state.workspaces.activeWorkspaceUid
+      );
+      if (!activeWorkspace?.pathname || !activeWorkspace.collections?.length) {
+        return Promise.resolve();
+      }
+
+      const workspacePathSet = new Set(
+        activeWorkspace.collections.map((wc) => normalizePath(wc.path))
+      );
+      const collectionsInWorkspace = state.collections.collections
+        .filter((c) => workspacePathSet.has(normalizePath(c.pathname)));
+      if (collectionsInWorkspace.length === 0) {
+        return Promise.resolve();
+      }
+
+      const reordered = collectionsInWorkspace.filter((i) => i.uid !== draggedItem.uid);
+      const targetIndex = reordered.findIndex((i) => i.uid === targetItem.uid);
+      reordered.splice(targetIndex, 0, draggedItem);
+      const collectionPaths = reordered.map((c) => c.pathname);
+
+      return window.ipcRenderer
+        .invoke('renderer:reorder-workspace-collections', activeWorkspace.pathname, collectionPaths)
+        .then(() => {
+          dispatch(moveCollection({ draggedItem, targetItem }));
+        })
+        .catch((err) => {
+          console.error('Failed to reorder workspace collections', err);
+          return Promise.reject(err);
+        });
     };
 
 export const saveCollectionSecurityConfig = (collectionUid, securityConfig) => (dispatch, getState) => {
@@ -2613,18 +2994,20 @@ export const hydrateCollectionWithUiStateSnapshot = (payload) => (dispatch, getS
   return new Promise((resolve, reject) => {
     const state = getState();
     try {
-      if (!collectionSnapshotData) resolve();
-      const { pathname, selectedEnvironment } = collectionSnapshotData;
+      if (!collectionSnapshotData) {
+        resolve();
+        return;
+      }
+      const { pathname } = collectionSnapshotData;
       const collection = findCollectionByPathname(state.collections.collections, pathname);
       const collectionCopy = cloneDeep(collection);
       const collectionUid = collectionCopy?.uid;
 
       // update selected environment
-      if (selectedEnvironment) {
-        const environment = findEnvironmentInCollectionByName(collectionCopy, selectedEnvironment);
-        if (environment) {
-          dispatch(_selectEnvironment({ environmentUid: environment?.uid, collectionUid }));
-        }
+      const environment = findCollectionEnvironmentFromSnapshot(collectionCopy, collectionSnapshotData);
+
+      if (environment) {
+        dispatch(_selectEnvironment({ environmentUid: environment?.uid, collectionUid }));
       }
 
       // todo: add any other redux state that you want to save
@@ -2697,9 +3080,10 @@ export const clearOauth2Cache = (payload) => async (dispatch, getState) => {
       .invoke('clear-oauth2-cache', collectionUid, url, credentialsId)
       .then(() => {
         dispatch(
-          collectionClearOauth2CredentialsByUrl({
+          collectionClearOauth2CredentialsByUrlAndCredentialsId({
             url,
-            collectionUid
+            collectionUid,
+            credentialsId
           })
         );
         resolve();
@@ -2756,12 +3140,20 @@ export const loadLargeRequest
     };
 
 export const mountCollection
-  = ({ collectionUid, collectionPathname, brunoConfig }) =>
+  = ({ collectionUid, collectionPathname, brunoConfig, skipTabRestore = false, workspacePathname = null }) =>
     (dispatch, getState) => {
       dispatch(updateCollectionMountStatus({ collectionUid, mountStatus: 'mounting' }));
       return new Promise(async (resolve, reject) => {
         callIpc('renderer:mount-collection', { collectionUid, collectionPathname, brunoConfig })
-          .then(() => dispatch(updateCollectionMountStatus({ collectionUid, mountStatus: 'mounted' })))
+          .then(async (transientDirPath) => {
+            dispatch(updateCollectionMountStatus({ collectionUid, mountStatus: 'mounted' }));
+            dispatch(addTransientDirectory({ collectionUid, pathname: transientDirPath }));
+
+            const collection = getState().collections.collections.find((c) => c.uid === collectionUid);
+            if (!skipTabRestore && collection?.pathname) {
+              await hydrateCollectionTabs(collection, dispatch, restoreTabs, null, workspacePathname);
+            }
+          })
           .then(resolve)
           .catch(() => {
             dispatch(updateCollectionMountStatus({ collectionUid, mountStatus: 'unmounted' }));
@@ -2818,3 +3210,190 @@ export const openCollectionSettings
         resolve();
       });
     };
+
+export const saveDotEnvVariables = (collectionUid, variables, filename = '.env') => (dispatch, getState) => {
+  const { ipcRenderer } = window;
+  return new Promise((resolve, reject) => {
+    const state = getState();
+    const collection = findCollectionByUid(state.collections.collections, collectionUid);
+
+    if (!collection) {
+      return reject(new Error('Collection not found'));
+    }
+
+    ipcRenderer
+      .invoke('renderer:save-dotenv-variables', collection.pathname, variables, filename)
+      .then(resolve)
+      .catch(reject);
+  });
+};
+
+export const saveDotEnvRaw = (collectionUid, content, filename = '.env') => (dispatch, getState) => {
+  const { ipcRenderer } = window;
+  return new Promise((resolve, reject) => {
+    const state = getState();
+    const collection = findCollectionByUid(state.collections.collections, collectionUid);
+
+    if (!collection) {
+      return reject(new Error('Collection not found'));
+    }
+
+    ipcRenderer
+      .invoke('renderer:save-dotenv-raw', collection.pathname, content, filename)
+      .then(resolve)
+      .catch(reject);
+  });
+};
+
+export const createDotEnvFile = (collectionUid, filename = '.env') => (dispatch, getState) => {
+  const { ipcRenderer } = window;
+  return new Promise((resolve, reject) => {
+    const state = getState();
+    const collection = findCollectionByUid(state.collections.collections, collectionUid);
+
+    if (!collection) {
+      return reject(new Error('Collection not found'));
+    }
+
+    ipcRenderer
+      .invoke('renderer:create-dotenv-file', collection.pathname, filename)
+      .then(resolve)
+      .catch(reject);
+  });
+};
+
+export const deleteDotEnvFile = (collectionUid, filename = '.env') => (dispatch, getState) => {
+  const { ipcRenderer } = window;
+  return new Promise((resolve, reject) => {
+    const state = getState();
+    const collection = findCollectionByUid(state.collections.collections, collectionUid);
+
+    if (!collection) {
+      return reject(new Error('Collection not found'));
+    }
+
+    ipcRenderer
+      .invoke('renderer:delete-dotenv-file', collection.pathname, filename)
+      .then(resolve)
+      .catch(reject);
+  });
+};
+
+export const cloneGitRepository = (data) => (dispatch, getState) => {
+  const { ipcRenderer } = window;
+  return new Promise((resolve, reject) => {
+    ipcRenderer
+      .invoke('renderer:clone-git-repository', data)
+      .then((res) => {
+        console.log('clone done', res);
+      })
+      .then(resolve)
+      .catch((err) => {
+        toast.custom(<IpcErrorModal error={err?.message} />);
+        reject();
+      });
+  });
+};
+
+export const scanForBrunoFiles = (dir) => (dispatch, getState) => {
+  const { ipcRenderer } = window;
+  return new Promise((resolve, reject) => {
+    ipcRenderer
+      .invoke('renderer:scan-for-bruno-files', dir)
+      .then(resolve)
+      .catch((err) => {
+        reject();
+      });
+  });
+};
+
+/**
+ * If the current active tab belongs to another workspace, focus a tab in the current workspace.
+ */
+export const ensureActiveTabInCurrentWorkspace = () => (dispatch, getState) => {
+  const state = getState();
+  const result = getTabToFocusForCurrentWorkspace(state);
+  if (!result) {
+    return; // Already in workspace, no active workspace, or unfixable (no workspace tabs and no scratch).
+  }
+  if (result.addOverviewFirst && result.scratchCollectionUid) {
+    dispatch(addTab({
+      uid: result.uid,
+      collectionUid: result.scratchCollectionUid,
+      type: 'workspaceOverview'
+    }));
+  }
+  dispatch(focusTab({ uid: result.uid }));
+};
+
+/**
+ * Close tabs and delete any transient request files from the filesystem.
+ * This thunk wraps the closeTabs reducer to handle transient file cleanup automatically.
+ * Also drops openapi-sync redux state (drift, storedSpec, tabUiState) for any
+ * openapi-sync tab that's about to close — collected BEFORE the close so we can
+ * still read the closing tabs' collectionUids from state.
+ */
+export const closeTabs = ({ tabUids }) => async (dispatch, getState) => {
+  const { ipcRenderer } = window;
+  const state = getState();
+  const collections = state.collections.collections;
+  const tempDirectories = state.collections.tempDirectories || {};
+
+  // Find transient items and group by temp directory before closing tabs
+  const transientByTempDir = {};
+  each(tabUids, (tabUid) => {
+    for (const collection of collections) {
+      const item = findItemInCollection(collection, tabUid);
+      if (item?.isTransient && item.pathname) {
+        const tempDir = tempDirectories[collection.uid];
+        if (tempDir) {
+          if (!transientByTempDir[tempDir]) {
+            transientByTempDir[tempDir] = [];
+          }
+          transientByTempDir[tempDir].push(item.pathname);
+        }
+        break;
+      }
+    }
+  });
+
+  const closingOpenApiSyncCollectionUids = (state.tabs?.tabs || [])
+    .filter((t) => tabUids.includes(t.uid) && t.type === 'openapi-sync' && t.collectionUid)
+    .map((t) => t.collectionUid);
+
+  // Close the tabs first
+  await dispatch(_closeTabs({ tabUids }));
+
+  // Clear persisted scope AFTER unmount — otherwise useTrackScroll's cleanup flush
+  // would rewrite scroll position to localStorage right after we cleared it.
+  each(tabUids, (tabUid) => clearPersistedScope(tabUid));
+
+  // After close, the reducer may have set active tab to one from another workspace. Ensure it belongs to this workspace: prefer any open in-workspace tab, then workspace overview if none.
+  // Dispatch is synchronous; state is already updated by _closeTabs above.
+  await dispatch(ensureActiveTabInCurrentWorkspace());
+
+  // Drop openapi-sync per-collection state (drift, storedSpec, tabUiState) for any closed openapi-sync tabs.
+  for (const collectionUid of closingOpenApiSyncCollectionUids) {
+    dispatch(clearOpenApiSyncTabState({ collectionUid }));
+  }
+
+  // Delete transient files after tabs are closed
+  for (const [tempDir, filePaths] of Object.entries(transientByTempDir)) {
+    try {
+      const results = await ipcRenderer.invoke('renderer:delete-transient-requests', filePaths, tempDir);
+      if (results.errors?.length > 0) {
+        console.error('Errors deleting transient files:', results.errors);
+      }
+    } catch (err) {
+      console.error('Failed to delete transient request files:', err);
+    }
+  }
+};
+
+/**
+ * Reopen last closed tab from the tabs slice stack and ensure active tab/workspace consistency.
+ */
+export const reopenClosedTab = ({ collectionUid } = {}) => async (dispatch) => {
+  dispatch(reopenLastClosedTab({ collectionUid }));
+  await dispatch(ensureActiveTabInCurrentWorkspace());
+};

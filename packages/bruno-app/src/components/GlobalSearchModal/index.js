@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import {
   IconSearch,
@@ -12,7 +12,8 @@ import { flattenItems, isItemARequest, isItemAFolder, findParentItemInCollection
 import { addTab, focusTab } from 'providers/ReduxStore/slices/tabs';
 import { toggleCollectionItem, toggleCollection } from 'providers/ReduxStore/slices/collections';
 import { mountCollection } from 'providers/ReduxStore/slices/collections/actions';
-import { getPreservedRequestPaneTab } from 'utils/collections';
+import { getDefaultRequestPaneTab } from 'utils/collections';
+import { normalizePath } from 'utils/common/path';
 import { normalizeQuery, isValidQuery, highlightText, sortResults, getTypeLabel, getItemPath } from './utils/searchUtils';
 import { SEARCH_TYPES, MATCH_TYPES, SEARCH_CONFIG, DOCUMENTATION_RESULT } from './constants';
 import StyledWrapper from './StyledWrapper';
@@ -26,9 +27,21 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
   const debounceTimeoutRef = useRef(null);
   const dispatch = useDispatch();
 
-  const collections = useSelector((state) => (state.collections.collections || []).filter((c) => !c.__isAuthMode__));
+  const allCollections = useSelector((state) => (state.collections.collections || []).filter((c) => !c.__isAuthMode__));
+  const { workspaces, activeWorkspaceUid } = useSelector((state) => state.workspaces);
   const tabs = useSelector((state) => state.tabs.tabs);
   const activeTabUid = useSelector((state) => state.tabs.activeTabUid);
+
+  const activeWorkspace = workspaces.find((w) => w.uid === activeWorkspaceUid);
+
+  const collections = useMemo(() => {
+    if (!activeWorkspace) return allCollections;
+
+    const workspacePaths = new Set(
+      activeWorkspace.collections?.map((wc) => normalizePath(wc.path)) || []
+    );
+    return allCollections.filter((c) => workspacePaths.has(normalizePath(c.pathname)));
+  }, [activeWorkspace, allCollections, workspaces]);
 
   const createCollectionResults = () => {
     const collectionResults = collections.map((collection) => ({
@@ -73,7 +86,7 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
         const itemPathLower = itemPath.toLowerCase();
 
         if (isItemARequest(item)) {
-          // add an optional check for the item name to prevent a crash if it doesn’t exist.
+          // add an optional check for the item name to prevent a crash if it doesn't exist.
           const nameMatch = searchTerms.every((term) => (item.name || '').toLowerCase().includes(term));
           const urlMatch = searchTerms.every((term) => (item.request?.url || '').toLowerCase().includes(term));
           const pathMatch = enablePathMatch && searchTerms.every((term) => itemPathLower.includes(term));
@@ -254,15 +267,17 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
         dispatch(addTab({
           uid: result.item.uid,
           collectionUid: result.collectionUid,
-          requestPaneTab: getPreservedRequestPaneTab(result.item, tabs, activeTabUid),
-          type: 'request'
+          requestPaneTab: getDefaultRequestPaneTab(result.item),
+          type: result.item.type,
+          pathname: result.item.pathname
         }));
       }
     } else if (result.type === SEARCH_TYPES.FOLDER) {
       dispatch(addTab({
         uid: result.item.uid,
         collectionUid: result.collectionUid,
-        type: 'folder-settings'
+        type: 'folder-settings',
+        pathname: result.item.pathname
       }));
     } else if (result.type === SEARCH_TYPES.COLLECTION) {
       dispatch(addTab({
@@ -390,6 +405,7 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
                 aria-activedescendant={results.length > 0 ? `search-result-${selectedIndex}` : undefined}
                 role="combobox"
                 aria-autocomplete="list"
+                data-testid="global-search-input"
               />
               {query && (
                 <button
@@ -417,7 +433,7 @@ const GlobalSearchModal = ({ isOpen, onClose }) => {
                   No results found for "{query}".
                   <br />
                   <span className="block mt-2">
-                    The item might not exist yet, or its collection isn’t mounted. Press <strong>Enter</strong> here (or open it from the sidebar) to mount the collection automatically.
+                    The item might not exist yet, or its collection isn't mounted. Press <strong>Enter</strong> here (or open it from the sidebar) to mount the collection automatically.
                   </span>
                 </p>
               </div>

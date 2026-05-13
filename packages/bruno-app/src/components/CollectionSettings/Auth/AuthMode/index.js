@@ -14,6 +14,7 @@ const BUILT_IN_ITEMS = (onModeChange) => ([
   { id: 'bearer', label: 'Bearer Token', onClick: () => onModeChange('bearer') },
   { id: 'digest', label: 'Digest Auth', onClick: () => onModeChange('digest') },
   { id: 'ntlm', label: 'NTLM Auth', onClick: () => onModeChange('ntlm') },
+  { id: 'oauth1', label: 'OAuth 1.0', onClick: () => onModeChange('oauth1') },
   { id: 'oauth2', label: 'OAuth 2.0', onClick: () => onModeChange('oauth2') },
   { id: 'apikey', label: 'API Key', onClick: () => onModeChange('apikey') },
   { id: 'inherit-environment', label: 'Inherit from Environment', onClick: () => onModeChange('inherit-environment') },

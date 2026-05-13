@@ -4,7 +4,8 @@ const { get } = require('lodash');
 const { getCACertificates } = require('@usebruno/requests');
 const { preferencesUtil } = require('../../store/preferences');
 const { getBrunoConfig } = require('../../store/bruno-config');
-const { interpolateString } = require('./interpolate-string');
+const { getCachedSystemProxy } = require('../../store/system-proxy');
+const { interpolateString, interpolateObject } = require('./interpolate-string');
 
 /**
  * Gets certificates and proxy configuration for a request
@@ -28,14 +29,20 @@ const getCertsAndProxyConfig = async ({
     httpsAgentRequestFields['rejectUnauthorized'] = false;
   }
 
-  let caCertFilePath = preferencesUtil.shouldUseCustomCaCertificate() && preferencesUtil.getCustomCaCertificateFilePath();
-  let caCertificatesData = getCACertificates({
-    caCertFilePath,
-    shouldKeepDefaultCerts: preferencesUtil.shouldKeepDefaultCaCertificates()
-  });
+  let caCertificates = '';
+  let caCertificatesCount = { system: 0, root: 0, custom: 0, extra: 0 };
 
-  let caCertificates = caCertificatesData.caCertificates;
-  let caCertificatesCount = caCertificatesData.caCertificatesCount;
+  // Only load CA certificates if SSL validation is enabled (otherwise they're unused)
+  if (preferencesUtil.shouldVerifyTls()) {
+    let caCertFilePath = preferencesUtil.shouldUseCustomCaCertificate() && preferencesUtil.getCustomCaCertificateFilePath();
+    let caCertificatesData = getCACertificates({
+      caCertFilePath,
+      shouldKeepDefaultCerts: preferencesUtil.shouldKeepDefaultCaCertificates()
+    });
+
+    caCertificates = caCertificatesData.caCertificates;
+    caCertificatesCount = caCertificatesData.caCertificatesCount;
+  }
 
   // configure HTTPS agent with aggregated CA certificates
   httpsAgentRequestFields['caCertificatesCount'] = caCertificatesCount;
@@ -114,6 +121,7 @@ const getCertsAndProxyConfig = async ({
    */
   let proxyMode = 'off';
   let proxyConfig = {};
+  let proxyModeReason = '';
 
   const collectionProxyConfig = get(brunoConfig, 'proxy', {});
   const collectionProxyDisabled = get(collectionProxyConfig, 'disabled', false);
@@ -128,22 +136,101 @@ const getCertsAndProxyConfig = async ({
     // Inherit from global preferences
     const globalProxy = preferencesUtil.getGlobalProxyConfig();
     const globalDisabled = get(globalProxy, 'disabled', false);
-    const globalInherit = get(globalProxy, 'inherit', false);
-    const globalProxyConfigData = get(globalProxy, 'config', globalProxy);
+    const globalProxySource = get(globalProxy, 'source', 'manual');
+    const globalProxyConfigData = get(globalProxy, 'config', {});
 
-    if (!globalDisabled && !globalInherit) {
-      // Use global custom proxy
-      proxyConfig = globalProxyConfigData;
-      proxyMode = 'on';
-    } else if (!globalDisabled && globalInherit) {
-      // Use system proxy
-      proxyMode = 'system';
+    if (!globalDisabled) {
+      if (globalProxySource === 'pac') {
+        proxyMode = 'pac';
+        proxyConfig = {
+          pac: globalProxy.pac ?? {}
+        };
+      } else if (globalProxySource === 'inherit') {
+        proxyMode = 'system';
+        const systemProxyConfig = await getCachedSystemProxy();
+        proxyConfig = systemProxyConfig || { http_proxy: null, https_proxy: null, no_proxy: null, source: 'cache-miss' };
+      } else {
+        // source === 'manual'
+        proxyConfig = globalProxyConfigData;
+        proxyMode = 'on';
+      }
+    } else {
+      proxyModeReason = 'App-level proxy is disabled';
     }
-    // else: global proxy is disabled, proxyMode stays 'off'
+  } else {
+    proxyModeReason = 'Collection-level proxy is disabled';
   }
-  // else: collection proxy is disabled, proxyMode stays 'off'
 
-  return { proxyMode, proxyConfig, httpsAgentRequestFields, interpolationOptions };
+  return { proxyMode, proxyModeReason, proxyConfig, httpsAgentRequestFields, interpolationOptions };
 };
 
-module.exports = { getCertsAndProxyConfig };
+/**
+ * Builds the certsAndProxyConfig object for bru.sendRequest
+ * This allows bru.sendRequest to use the same proxy/certs config as the main request
+ */
+const buildCertsAndProxyConfig = async ({
+  collectionUid,
+  collection,
+  collectionPath,
+  envVars,
+  runtimeVariables,
+  processEnvVars,
+  request
+}) => {
+  const brunoConfig = getBrunoConfig(collectionUid, collection);
+
+  // Build interpolation options (same pattern as getCertsAndProxyConfig)
+  const globalEnvironmentVariables = collection.globalEnvironmentVariables || {};
+  const { promptVariables } = collection;
+  const collectionVariables = request?.collectionVariables || {};
+  const folderVariables = request?.folderVariables || {};
+  const requestVariables = request?.requestVariables || {};
+
+  const interpolationOptions = {
+    globalEnvironmentVariables,
+    collectionVariables,
+    envVars,
+    folderVariables,
+    requestVariables,
+    runtimeVariables,
+    promptVariables,
+    processEnvVars
+  };
+
+  // Build options for getHttpHttpsAgents
+  const options = {
+    noproxy: false,
+    shouldVerifyTls: preferencesUtil.shouldVerifyTls(),
+    shouldUseCustomCaCertificate: preferencesUtil.shouldUseCustomCaCertificate(),
+    customCaCertificateFilePath: preferencesUtil.getCustomCaCertificateFilePath(),
+    shouldKeepDefaultCaCertificates: preferencesUtil.shouldKeepDefaultCaCertificates(),
+    cacheSslSession: preferencesUtil.isSslSessionCachingEnabled()
+  };
+
+  // Get client certificates from bruno config and interpolate
+  const rawClientCertificates = get(brunoConfig, 'clientCertificates');
+  const clientCertificates = rawClientCertificates
+    ? interpolateObject(rawClientCertificates, interpolationOptions)
+    : undefined;
+
+  // Get proxy config from bruno config and interpolate
+  const collectionProxyConfig = get(brunoConfig, 'proxy', {});
+  const collectionLevelProxy = interpolateObject(collectionProxyConfig, interpolationOptions);
+
+  // Get app-level proxy config from global preferences
+  const appLevelProxyConfig = preferencesUtil.getGlobalProxyConfig();
+
+  // Get system proxy config
+  const systemProxyConfig = await getCachedSystemProxy();
+
+  return {
+    collectionPath,
+    options,
+    clientCertificates,
+    collectionLevelProxy,
+    appLevelProxyConfig,
+    systemProxyConfig
+  };
+};
+
+module.exports = { getCertsAndProxyConfig, buildCertsAndProxyConfig };

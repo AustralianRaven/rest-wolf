@@ -47,6 +47,11 @@ const stringifyEnvironment = (environment: BrunoEnvironment & { auth?: any }): s
       name: environment.name
     };
 
+    if (environment.color) {
+      ocEnvironment.color = environment.color;
+    }
+
+
     if (environment.variables?.length) {
       const ocVariables = toOpenCollectionEnvironmentVariables(environment.variables);
       if (ocVariables) {

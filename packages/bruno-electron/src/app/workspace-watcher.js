@@ -8,6 +8,7 @@ const { getWorkspaceUid } = require('../utils/workspace-config');
 const { parseEnvironment } = require('@usebruno/filestore');
 const EnvironmentSecretsStore = require('../store/env-secrets');
 const { decryptStringSafe } = require('../utils/encryption');
+const dotEnvWatcher = require('./dotenv-watcher');
 
 const environmentSecretsStore = new EnvironmentSecretsStore();
 
@@ -147,7 +148,7 @@ class WorkspaceWatcher {
       }
 
       const watcher = chokidar.watch(workspaceFilePath, {
-        ignoreInitial: false,
+        ignoreInitial: true,
         persistent: true,
         ignorePermissionErrors: true,
         awaitWriteFinish: {
@@ -157,9 +158,10 @@ class WorkspaceWatcher {
       });
 
       watcher.on('change', () => handleWorkspaceFileChange(win, workspacePath));
-      watcher.on('add', () => handleWorkspaceFileChange(win, workspacePath));
 
       self.watchers[workspacePath] = watcher;
+
+      dotEnvWatcher.addWorkspaceWatcher(win, workspacePath, workspaceUid);
 
       if (fs.existsSync(environmentsDir)) {
         const envWatcher = chokidar.watch(path.join(environmentsDir, `*.yml`), {
@@ -213,6 +215,7 @@ class WorkspaceWatcher {
         this.environmentWatchers[workspacePath].close();
         delete this.environmentWatchers[workspacePath];
       }
+      dotEnvWatcher.removeWorkspaceWatcher(workspacePath);
     } catch (error) {
       console.error('Error removing workspace watcher:', error);
     }
@@ -220,6 +223,24 @@ class WorkspaceWatcher {
 
   hasWatcher(workspacePath) {
     return Boolean(this.watchers[workspacePath]);
+  }
+
+  closeAllWatchers() {
+    for (const [watchPath, watcher] of Object.entries(this.watchers)) {
+      try {
+        watcher?.close();
+      } catch (err) {}
+    }
+    this.watchers = {};
+
+    for (const [watchPath, watcher] of Object.entries(this.environmentWatchers)) {
+      try {
+        watcher?.close();
+      } catch (err) {}
+    }
+    this.environmentWatchers = {};
+
+    dotEnvWatcher.closeAll();
   }
 }
 

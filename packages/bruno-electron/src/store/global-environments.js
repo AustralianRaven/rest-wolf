@@ -2,6 +2,7 @@ const _ = require('lodash');
 const Store = require('electron-store');
 const { encryptStringSafe, decryptStringSafe } = require('../utils/encryption');
 const { environmentSchema } = require('@usebruno/schema');
+const { posixifyPath } = require('../utils/filesystem');
 
 class GlobalEnvironmentsStore {
   constructor() {
@@ -86,6 +87,36 @@ class GlobalEnvironmentsStore {
     return this.store.get('activeGlobalEnvironmentUid', null);
   }
 
+  setActiveGlobalEnvironmentUid(uid) {
+    return this.store.set('activeGlobalEnvironmentUid', uid);
+  }
+
+  getActiveGlobalEnvironmentUidForWorkspace(workspacePath) {
+    if (!workspacePath) return undefined;
+    const key = posixifyPath(workspacePath);
+    const mapping = this.store.get('activeGlobalEnvironmentUidByWorkspace', {});
+    if (key in mapping) {
+      return mapping[key];
+    }
+    return undefined;
+  }
+
+  setActiveGlobalEnvironmentUidForWorkspace(workspacePath, uid) {
+    if (!workspacePath) return;
+    const key = posixifyPath(workspacePath);
+    const mapping = this.store.get('activeGlobalEnvironmentUidByWorkspace', {});
+    mapping[key] = uid || null;
+    this.store.set('activeGlobalEnvironmentUidByWorkspace', mapping);
+  }
+
+  removeActiveGlobalEnvironmentUidForWorkspace(workspacePath) {
+    if (!workspacePath) return;
+    const key = posixifyPath(workspacePath);
+    const mapping = this.store.get('activeGlobalEnvironmentUidByWorkspace', {});
+    delete mapping[key];
+    this.store.set('activeGlobalEnvironmentUidByWorkspace', mapping);
+  }
+
   setGlobalEnvironments(globalEnvironments) {
     globalEnvironments = this.filterValidEnvironments(globalEnvironments);
 
@@ -93,11 +124,7 @@ class GlobalEnvironmentsStore {
     return this.store.set('environments', globalEnvironments);
   }
 
-  setActiveGlobalEnvironmentUid(uid) {
-    return this.store.set('activeGlobalEnvironmentUid', uid);
-  }
-
-  addGlobalEnvironment({ uid, name, variables = [] }) {
+  addGlobalEnvironment({ uid, name, variables = [], color }) {
     let globalEnvironments = this.getGlobalEnvironments();
     const existingEnvironment = globalEnvironments.find((env) => env?.name == name);
     if (existingEnvironment) {
@@ -106,17 +133,21 @@ class GlobalEnvironmentsStore {
     globalEnvironments.push({
       uid,
       name,
-      variables
+      variables,
+      color
     });
     this.setGlobalEnvironments(globalEnvironments);
   }
 
-  saveGlobalEnvironment({ environmentUid: globalEnvironmentUid, variables }) {
+  saveGlobalEnvironment({ environmentUid: globalEnvironmentUid, variables, color }) {
     let globalEnvironments = this.getGlobalEnvironments();
     const environment = globalEnvironments.find((env) => env?.uid == globalEnvironmentUid);
     globalEnvironments = globalEnvironments.filter((env) => env?.uid !== globalEnvironmentUid);
     if (environment) {
       environment.variables = variables;
+      if (color !== undefined) {
+        environment.color = color;
+      }
     }
     globalEnvironments.push(environment);
     this.setGlobalEnvironments(globalEnvironments);
@@ -159,6 +190,15 @@ class GlobalEnvironmentsStore {
     globalEnvironments = globalEnvironments.filter((env) => env?.uid !== environmentUid);
     if (environmentUid == activeGlobalEnvironmentUid) {
       this.setActiveGlobalEnvironmentUid(null);
+    }
+    this.setGlobalEnvironments(globalEnvironments);
+  }
+
+  updateGlobalEnvironmentColor({ environmentUid, color }) {
+    let globalEnvironments = this.getGlobalEnvironments();
+    const environment = globalEnvironments.find((env) => env?.uid == environmentUid);
+    if (environment) {
+      environment.color = color;
     }
     this.setGlobalEnvironments(globalEnvironments);
   }

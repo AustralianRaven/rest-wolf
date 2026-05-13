@@ -5,6 +5,18 @@ const { dialog } = require('electron');
 const isValidPathname = require('is-valid-path');
 const os = require('os');
 
+const DEFAULT_GITIGNORE = [
+  '# Secrets',
+  '.env*',
+  '',
+  '# Dependencies',
+  'node_modules',
+  '',
+  '# OS files',
+  '.DS_Store',
+  'Thumbs.db'
+].join('\n');
+
 const exists = async (p) => {
   try {
     await fsPromises.access(p);
@@ -430,14 +442,21 @@ const isDotEnvFile = (pathname, collectionPath) => {
   const dirname = path.dirname(pathname);
   const basename = path.basename(pathname);
 
-  return dirname === collectionPath && basename === '.env';
+  return path.normalize(dirname) === path.normalize(collectionPath) && basename === '.env';
+};
+
+const isValidDotEnvFilename = (filename) => {
+  if (!filename || typeof filename !== 'string') return false;
+  const basename = path.basename(filename);
+  if (basename !== filename) return false;
+  return basename === '.env' || (basename.startsWith('.env.') && /^\.env\.[a-zA-Z0-9._-]+$/.test(basename));
 };
 
 const isBrunoConfigFile = (pathname, collectionPath) => {
   const dirname = path.dirname(pathname);
   const basename = path.basename(pathname);
 
-  return dirname === collectionPath && basename === 'bruno.json';
+  return path.normalize(dirname) === path.normalize(collectionPath) && basename === 'bruno.json';
 };
 
 const isBruEnvironmentConfig = (pathname, collectionPath) => {
@@ -445,17 +464,48 @@ const isBruEnvironmentConfig = (pathname, collectionPath) => {
   const envDirectory = path.join(collectionPath, 'environments');
   const basename = path.basename(pathname);
 
-  return dirname === envDirectory && hasBruExtension(basename);
+  return path.normalize(dirname) === path.normalize(envDirectory) && hasBruExtension(basename);
 };
 
 const isCollectionRootBruFile = (pathname, collectionPath) => {
   const dirname = path.dirname(pathname);
   const basename = path.basename(pathname);
 
-  return dirname === collectionPath && basename === 'collection.bru';
+  return path.normalize(dirname) === path.normalize(collectionPath) && basename === 'collection.bru';
 };
 
+const scanForBrunoFiles = async (dir) => {
+  const brunoFolders = [];
+
+  const scanDir = (currentDir) => {
+    const files = fs.readdirSync(currentDir);
+
+    if (files && files.length) {
+      files.forEach((file) => {
+        const fullPath = path.join(currentDir, file);
+        const stat = fs.statSync(fullPath);
+
+        if (stat.isDirectory()) {
+          if (['node_modules', '.git'].includes(file)) {
+            return;
+          }
+          scanDir(fullPath);
+        } else if (file === 'bruno.json') {
+          brunoFolders.push(currentDir);
+        }
+      });
+    }
+  };
+
+  scanDir(dir);
+  return brunoFolders;
+};
+
+const posixifyPath = (p) => (p ? p.replace(/\\/g, '/') : p);
+
 module.exports = {
+  DEFAULT_GITIGNORE,
+  posixifyPath,
   isValidPathname,
   exists,
   isSymbolicLink,
@@ -491,7 +541,9 @@ module.exports = {
   generateUniqueName,
   getCollectionFormat,
   isDotEnvFile,
+  isValidDotEnvFilename,
   isBrunoConfigFile,
   isBruEnvironmentConfig,
-  isCollectionRootBruFile
+  isCollectionRootBruFile,
+  scanForBrunoFiles
 };

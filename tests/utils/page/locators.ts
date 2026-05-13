@@ -1,10 +1,11 @@
-import { Page } from '../../../playwright';
+import { Page, Locator } from '../../../playwright';
 
 export const buildCommonLocators = (page: Page) => ({
   runner: () => page.getByTestId('run-button'),
   saveButton: () => page
     .locator('.infotip')
     .filter({ hasText: /^Save/ }),
+  openPreferences: () => page.getByRole('button', { name: 'Open Preferences' }),
   sidebar: {
     collectionsContainer: () => page.getByTestId('collections'),
     collection: (name: string) => page.locator('#sidebar-collection-name').filter({ hasText: name }),
@@ -18,9 +19,7 @@ export const buildCommonLocators = (page: Page) => ({
       return folderWrapper.locator('.collection-item-name').filter({ hasText: requestName });
     },
     closeAllCollectionsButton: () => page.getByTestId('collections-header-actions-menu-close-all'),
-    collectionRow: (name: string) => page.locator('.collection-name').filter({
-      has: page.locator('#sidebar-collection-name', { hasText: name })
-    })
+    collectionRow: (name: string) => page.getByTestId('sidebar-collection-row').filter({ hasText: name })
   },
   actions: {
     collectionActions: (collectionName: string) =>
@@ -39,7 +38,14 @@ export const buildCommonLocators = (page: Page) => ({
   tabs: {
     requestTab: (requestName: string) => page.locator('.request-tab .tab-label').filter({ hasText: requestName }),
     activeRequestTab: () => page.locator('.request-tab.active'),
-    closeTab: (requestName: string) => page.locator('.request-tab').filter({ hasText: requestName }).getByTestId('request-tab-close-icon')
+    closeTab: (requestName: string) => page.locator('.request-tab').filter({ hasText: requestName }).getByTestId('request-tab-close-icon'),
+    draftIndicator: () => page.locator('.request-tab.active .has-changes-icon')
+  },
+  paneTabs: {
+    responsiveTab: (key: string) => page.getByTestId(`responsive-tab-${key}`),
+    collectionSettingsTab: (key: string) => page.getByTestId(`collection-settings-tab-${key}`),
+    folderSettingsTab: (key: string) => page.getByTestId(`folder-settings-tab-${key}`),
+    tabTrigger: (key: string) => page.getByTestId(`tab-trigger-${key}`)
   },
   folder: {
     chevron: (folderName: string) => page.locator('.collection-item-name').filter({ hasText: folderName }).getByTestId('folder-chevron')
@@ -51,7 +57,8 @@ export const buildCommonLocators = (page: Page) => ({
     closeButton: () => page.locator('.bruno-modal').getByTestId('modal-close-button'),
     card: () => page.locator('.bruno-modal-card'),
     footer: () => page.locator('.bruno-modal-footer'),
-    submitButton: () => page.locator('.bruno-modal-footer .submit')
+    submitButton: () => page.locator('.bruno-modal-footer .submit'),
+    newRequestMethodOption: (id: string) => page.getByTestId(`method-selector-${id.toLowerCase()}`)
   },
   environment: {
     selector: () => page.getByTestId('environment-selector-trigger'),
@@ -66,6 +73,9 @@ export const buildCommonLocators = (page: Page) => ({
     createEnvButton: () => page.locator('button[id="create-env"]'),
     envNameInput: () => page.locator('input[name="name"]')
   },
+  codeMirror: {
+    byTestId: (testId: string) => page.getByTestId(testId).locator('.CodeMirror').first()
+  },
   request: {
     urlInput: () => page.locator('#request-url .CodeMirror'),
     urlLine: () => page.locator('#request-url .CodeMirror-line'),
@@ -73,11 +83,17 @@ export const buildCommonLocators = (page: Page) => ({
     methodDropdown: () => page.getByTestId('request-method-selector'),
     newRequestUrl: () => page.locator('#new-request-url .CodeMirror'),
     requestNameInput: () => page.getByPlaceholder('Request Name'),
-    requestTestId: () => page.getByTestId('request-name')
+    requestTestId: () => page.getByTestId('request-name'),
+    generateCodeButton: () => page.locator('#request-actions .infotip').first(),
+    bodyModeSelector: () => page.getByTestId('request-body-mode-selector'),
+    bodyEditor: () => page.getByTestId('request-body-editor')
   },
   tags: {
     input: () => page.getByTestId('tag-input').getByRole('textbox'),
     item: (tagName: string) => page.locator('.tag-item', { hasText: tagName })
+  },
+  runnerResults: {
+    itemPath: (name: string) => page.getByTestId('runner-result-item').filter({ hasText: name })
   },
   response: {
     statusCode: () => page.getByTestId('response-status-code'),
@@ -88,6 +104,7 @@ export const buildCommonLocators = (page: Page) => ({
     formatTab: () => page.getByTestId('format-response-tab'),
     formatTabDropdown: () => page.getByTestId('format-response-tab-dropdown'),
     previewContainer: () => page.getByTestId('response-preview-container'),
+    previewContainerCodeMirror: () => page.getByTestId('response-preview-container').locator('.CodeMirror').first(),
     codeLine: () => page.locator('.response-pane .editor-container .CodeMirror-line'),
     jsonTreeLine: () => page.locator('.response-pane .object-content')
   },
@@ -198,8 +215,43 @@ export const buildGrpcCommonLocators = (page: Page) => ({
     list: () => page.getByTestId('grpc-responses-list'),
     responseItem: (index: number) => page.getByTestId(`grpc-response-item-${index}`),
     responseItems: () => page.locator('[data-testid^="grpc-response-item-"]'),
-    tabCount: () => page.getByTestId('tab-response-count')
+    tabCount: () => page.getByRole('tab', { name: 'Response' }).getByTestId('grpc-tab-response-count')
   }
+});
+
+/**
+ * Builds locators for script error display elements
+ * @param page - The Playwright page object
+ * @returns Object with locators for script error elements
+ */
+export const buildScriptErrorLocators = (page: Page) => ({
+  /** All error cards on the page */
+  cards: () => page.getByTestId('script-error-card'),
+  /** Nth error card (0-indexed) */
+  card: (index?: number) => {
+    const cards = page.getByTestId('script-error-card');
+    return index !== undefined ? cards.nth(index) : cards.first();
+  },
+  /** Error title within a card */
+  title: (card?: Locator) => (card ?? page).getByTestId('script-error-title'),
+  /** Close button within a card */
+  closeButton: (card?: Locator) => (card ?? page).getByTestId('script-error-close'),
+  /** Source label within a card */
+  sourceLabel: (card?: Locator) => (card ?? page).getByTestId('script-error-source-label'),
+  /** File path link within a card */
+  filePath: (card?: Locator) => (card ?? page).getByTestId('script-error-file-path'),
+  /** Error message within a card */
+  message: (card?: Locator) => (card ?? page).getByTestId('script-error-message'),
+  /** Code snippet within a card */
+  codeSnippet: (card?: Locator) => (card ?? page).getByTestId('code-snippet'),
+  /** Error-highlighted code line within a card */
+  errorLine: (card?: Locator) => (card ?? page).getByTestId('code-line-error'),
+  /** Stack trace toggle within a card */
+  stackToggle: (card?: Locator) => (card ?? page).getByTestId('script-error-stack-toggle'),
+  /** Stack trace content within a card */
+  stack: (card?: Locator) => (card ?? page).getByTestId('script-error-stack'),
+  /** ScriptErrorIcon (the red alert button shown when card is dismissed) */
+  errorIcon: () => page.getByTestId('script-error-icon')
 });
 
 /**

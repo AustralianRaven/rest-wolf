@@ -1,16 +1,18 @@
 const _ = require('lodash');
-const { getValueString, indentString } = require('./utils');
+const { getValueString, indentString, serializeAnnotations } = require('./utils');
 
 const envToJson = (json) => {
   const meta = _.get(json, 'meta', null);
   const variables = _.get(json, 'variables', []);
+  const color = _.get(json, 'color', null);
+
   const vars = variables
     .filter((variable) => !variable.secret)
     .map((variable) => {
-      const { name, value, enabled } = variable;
+      const { name, value, enabled, annotations } = variable;
       const prefix = enabled ? '' : '~';
 
-      return indentString(`${prefix}${name}: ${getValueString(value)}`);
+      return indentString(`${serializeAnnotations(annotations)}${prefix}${name}: ${getValueString(value)}`);
     });
 
   const secretVars = variables
@@ -34,13 +36,14 @@ ${lines.join('\n')}
     }
   }
 
+  let output = metaBlock;
+
   if (!variables || !variables.length) {
-    return `${metaBlock}vars {
+    output += `vars {
 }
 `;
   }
 
-  let output = metaBlock;
   if (vars.length) {
     output += `vars {
 ${vars.join('\n')}
@@ -52,6 +55,11 @@ ${vars.join('\n')}
     output += `vars:secret [
 ${secretVars.join(',\n')}
 ]
+`;
+  }
+
+  if (color) {
+    output += `color: ${color}
 `;
   }
 

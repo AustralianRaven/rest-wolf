@@ -185,6 +185,59 @@ const Wrapper = styled.div`
   input[type='checkbox'] {
     cursor: pointer;
     accent-color: ${(props) => props.theme.primary.solid};
+
+  }
+
+  .checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid ${(props) => props.theme.border.border2};
+    border-radius: 3px;
+    background: transparent;
+    position: relative;
+    flex-shrink: 0;
+
+    &:hover {
+      border-color: ${(props) => props.theme.primary.solid};
+    }
+
+    &:focus-visible {
+      outline: 2px solid ${(props) => props.theme.textLink};
+      outline-offset: 2px;
+    }
+
+    &:checked,
+    &:indeterminate {
+      background: ${(props) => props.theme.button2.color.primary.bg};
+      border-color: ${(props) => props.theme.button2.color.primary.border};
+    }
+
+    &:checked::after,
+    &:indeterminate::after {
+      content: '';
+      position: absolute;
+    }
+
+    &:checked::after {
+      left: 4px;
+      top: 1px;
+      width: 5px;
+      height: 9px;
+      border: solid ${(props) => props.theme.button2.color.primary.text};
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
+    &:indeterminate::after {
+      left: 2px;
+      top: 6px;
+      width: 10px;
+      height: 2px;
+      background: ${(props) => props.theme.button2.color.primary.text};
+      border-radius: 2px;
+    }
   }
 `;
 

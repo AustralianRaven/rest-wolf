@@ -24,10 +24,9 @@ import { useSidebarAccordion } from 'components/Sidebar/SidebarAccordionContext'
 const ExampleItem = ({ example, item, collection }) => {
   const { dropdownContainerRef } = useSidebarAccordion();
   const dispatch = useDispatch();
-  // Check if this example is the active tab
   const activeTabUid = useSelector((state) => state.tabs?.activeTabUid);
   const isExampleActive = activeTabUid === example.uid;
-  const [editName, setEditName] = useState(example.name);
+  const [editName, setEditName] = useState(example.name || '');
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [generateCodeItemModalOpen, setGenerateCodeItemModalOpen] = useState(false);
@@ -39,11 +38,12 @@ const ExampleItem = ({ example, item, collection }) => {
 
   const handleExampleClick = () => {
     dispatch(addTab({
-      uid: example.uid, // Use example.uid as the tab uid
-      exampleUid: example.uid,
+      uid: example.uid,
       collectionUid: collection.uid,
       type: 'response-example',
-      itemUid: item.uid
+      itemUid: item.uid,
+      pathname: item.pathname,
+      exampleName: example.name
     }));
   };
 
@@ -86,7 +86,7 @@ const ExampleItem = ({ example, item, collection }) => {
     }));
 
     // Save the request
-    await dispatch(saveRequest(item.uid, collection.uid));
+    await dispatch(saveRequest(item.uid, collection.uid, true));
 
     // Task middleware will track this and open the example in a new tab once the file is reloaded
     dispatch(insertTaskIntoQueue({
@@ -125,8 +125,11 @@ const ExampleItem = ({ example, item, collection }) => {
         name: newName
       }
     }));
-    dispatch(saveRequest(item.uid, collection.uid));
-    setShowRenameModal(false);
+    dispatch(saveRequest(item.uid, collection.uid, true))
+      .then(() => {
+        toast.success(`Example renamed to "${newName}"`);
+        setShowRenameModal(false);
+      });
   };
 
   // Build menu items for MenuDropdown
@@ -227,7 +230,7 @@ const ExampleItem = ({ example, item, collection }) => {
           handleConfirm={() => handleRenameConfirm(editName)}
           confirmText="Rename"
           cancelText="Cancel"
-          confirmDisabled={!editName.trim()}
+          confirmDisabled={!editName || !editName.trim()}
         >
           <div>
             <label htmlFor="renameExampleName" className="block font-medium">

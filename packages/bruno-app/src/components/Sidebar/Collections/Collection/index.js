@@ -22,23 +22,24 @@ import {
   IconFolder,
   IconBook
 } from '@tabler/icons';
+import OpenAPISyncIcon from 'components/Icons/OpenAPISync';
 import { toggleCollection, collapseFullCollection } from 'providers/ReduxStore/slices/collections';
 import { mountCollection, moveCollectionAndPersist, handleCollectionItemDrop, pasteItem, showInFolder, saveCollectionSecurityConfig } from 'providers/ReduxStore/slices/collections/actions';
 import { useDispatch, useSelector } from 'react-redux';
 import { addTab, makeTabPermanent } from 'providers/ReduxStore/slices/tabs';
+import { setFocusedSidebarPath } from 'providers/ReduxStore/slices/app';
 import toast from 'react-hot-toast';
 import NewRequest from 'components/Sidebar/NewRequest';
 import NewFolder from 'components/Sidebar/NewFolder';
 import CollectionItem from './CollectionItem';
 import RemoveCollection from './RemoveCollection';
 import { doesCollectionHaveItemsMatchingSearchText } from 'utils/collections/search';
-import { isItemAFolder, isItemARequest } from 'utils/collections';
+import { isItemAFolder, isItemARequest, areItemsLoading } from 'utils/collections';
 import { isTabForItemActive } from 'src/selectors/tab';
 
 import RenameCollection from './RenameCollection';
 import StyledWrapper from './StyledWrapper';
 import CloneCollection from './CloneCollection';
-import { areItemsLoading } from 'utils/collections';
 import { scrollToTheActiveTab } from 'utils/tabs';
 import ShareCollection from 'components/ShareCollection/index';
 import GenerateDocumentation from './GenerateDocumentation';
@@ -48,9 +49,18 @@ import { getRevealInFolderLabel } from 'utils/common/platform';
 import { openDevtoolsAndSwitchToTerminal } from 'utils/terminal';
 import ActionIcon from 'ui/ActionIcon';
 import MenuDropdown from 'ui/MenuDropdown';
+import StatusBadge from 'ui/StatusBadge';
+import { useBetaFeature, BETA_FEATURES } from 'utils/beta-features';
 import { useSidebarAccordion } from 'components/Sidebar/SidebarAccordionContext';
+import { createEmptyStateMenuItems } from 'utils/collections/emptyStateRequest';
+import useKeybinding from 'hooks/useKeybinding';
+
+// Delay before showing empty collection state (ms)
+// This prevents flicker from race condition between loading state and item batch updates
+const EMPTY_STATE_DELAY_MS = 300;
 
 const Collection = ({ collection, searchText }) => {
+  const isOpenAPISyncEnabled = useBetaFeature(BETA_FEATURES.OPENAPI_SYNC);
   const { dropdownContainerRef } = useSidebarAccordion();
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [showNewRequestModal, setShowNewRequestModal] = useState(false);
@@ -61,13 +71,28 @@ const Collection = ({ collection, searchText }) => {
   const [showRemoveCollectionModal, setShowRemoveCollectionModal] = useState(false);
   const [dropType, setDropType] = useState(null);
   const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
+  const [showEmptyState, setShowEmptyState] = useState(false);
   const dispatch = useDispatch();
-  const isLoading = areItemsLoading(collection);
+  const isLoading = collection.isLoading;
   const collectionRef = useRef(null);
+  // Only count persisted items; transients don't affect empty state
+  const itemCount = collection.items?.filter((i) => !i.isTransient).length || 0;
 
   const isCollectionFocused = useSelector(isTabForItemActive({ itemUid: collection.uid }));
   const { hasCopiedItems } = useSelector((state) => state.app.clipboard);
   const menuDropdownRef = useRef(null);
+
+  // Open the OpenAPI Sync tab
+  const openOpenAPISyncTab = () => {
+    ensureCollectionIsMounted();
+    dispatch(
+      addTab({
+        uid: uuid(),
+        collectionUid: collection.uid,
+        type: 'openapi-sync'
+      })
+    );
+  };
 
   const handleRun = () => {
     dispatch(
@@ -179,25 +204,30 @@ const Collection = ({ collection, searchText }) => {
       });
   };
 
-  // Keyboard shortcuts handler for collection
-  const handleKeyDown = (e) => {
-    // Detect Mac by checking both metaKey and platform
-    const isMac = navigator.userAgent?.includes('Mac') || navigator.platform?.startsWith('Mac');
-    const isModifierPressed = isMac ? e.metaKey : e.ctrlKey;
+  // Sidebar shortcuts — only active when this collection has keyboard focus
+  useKeybinding('cloneItem', () => {
+    setShowCloneCollectionModalOpen(true);
+    return false;
+  }, { enabled: isKeyboardFocused, deps: [isKeyboardFocused] });
 
-    if (isModifierPressed && e.key.toLowerCase() === 'v') {
-      e.preventDefault();
-      e.stopPropagation();
-      handlePasteItem();
-    }
-  };
+  useKeybinding('renameItem', () => {
+    setShowRenameCollectionModal(true);
+    return false;
+  }, { enabled: isKeyboardFocused, deps: [isKeyboardFocused] });
+
+  useKeybinding('pasteItem', () => {
+    handlePasteItem();
+    return false;
+  }, { enabled: isKeyboardFocused, deps: [isKeyboardFocused] });
 
   const handleFocus = () => {
     setIsKeyboardFocused(true);
+    dispatch(setFocusedSidebarPath(collection.pathname));
   };
 
   const handleBlur = () => {
     setIsKeyboardFocused(false);
+    dispatch(setFocusedSidebarPath(null));
   };
 
   const isCollectionItem = (itemType) => {
@@ -258,6 +288,21 @@ const Collection = ({ collection, searchText }) => {
     }
   }, [isCollectionFocused]);
 
+  // Debounce showing empty state to prevent flicker
+  // Race condition: isLoading can become false before items batch arrives from IPC
+  useEffect(() => {
+    const isMounted = collection.mountStatus === 'mounted';
+    const hasItems = itemCount > 0;
+
+    if (hasItems || isLoading || !isMounted) {
+      setShowEmptyState(false);
+      return;
+    }
+
+    const timer = setTimeout(() => setShowEmptyState(true), EMPTY_STATE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [itemCount, isLoading, collection.mountStatus]);
+
   if (searchText && searchText.length) {
     if (!doesCollectionHaveItemsMatchingSearchText(collection, searchText)) {
       return null;
@@ -276,8 +321,11 @@ const Collection = ({ collection, searchText }) => {
     return items.sort((a, b) => a.seq - b.seq);
   };
 
-  const requestItems = sortItemsBySequence(filter(collection.items, (i) => isItemARequest(i)));
-  const folderItems = sortByNameThenSequence(filter(collection.items, (i) => isItemAFolder(i)));
+  const requestItems = sortItemsBySequence(filter(collection.items, (i) => isItemARequest(i) && !i.isTransient));
+  const folderItems = sortByNameThenSequence(filter(collection.items, (i) => isItemAFolder(i) && !i.isTransient));
+  const showEmptyCollectionMessage = showEmptyState && !hasSearchText;
+
+  const emptyStateMenuItems = createEmptyStateMenuItems({ dispatch, collection, itemUid: null });
 
   const menuItems = [
     {
@@ -316,6 +364,13 @@ const Collection = ({ collection, searchText }) => {
         setShowCloneCollectionModalOpen(true);
       }
     },
+    ...(isOpenAPISyncEnabled ? [{
+      id: 'sync-openapi',
+      leftSection: OpenAPISyncIcon,
+      label: 'OpenAPI',
+      rightSection: <StatusBadge status="info" size="xs">Beta</StatusBadge>,
+      onClick: openOpenAPISyncTab
+    }] : []),
     ...(hasCopiedItems
       ? [
           {
@@ -420,7 +475,6 @@ const Collection = ({ collection, searchText }) => {
           drag(drop(node));
         }}
         tabIndex={0}
-        onKeyDown={handleKeyDown}
         onFocus={handleFocus}
         onBlur={handleBlur}
         data-testid="sidebar-collection-row"
@@ -472,6 +526,23 @@ const Collection = ({ collection, searchText }) => {
             {requestItems?.map?.((i) => {
               return <CollectionItem key={i.uid} item={i} collectionUid={collection.uid} collectionPathname={collection.pathname} searchText={searchText} />;
             })}
+            {showEmptyCollectionMessage ? (
+              <div className="empty-collection-message">
+                <div className="indent-block" style={{ width: 16, minWidth: 16, height: '100%' }}>
+                  &nbsp;
+                </div>
+                <div style={{ paddingLeft: 8 }}>
+                  <MenuDropdown
+                    items={emptyStateMenuItems}
+                    placement="bottom-start"
+                    appendTo={dropdownContainerRef?.current || document.body}
+                    popperOptions={{ strategy: 'fixed' }}
+                  >
+                    <button className="ml-1 add-request-link">+ Add request</button>
+                  </MenuDropdown>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
