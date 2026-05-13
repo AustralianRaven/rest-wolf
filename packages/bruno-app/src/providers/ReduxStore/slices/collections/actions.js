@@ -1988,8 +1988,8 @@ export const saveEnvironmentAuthFromStub = ({ uid }) => (dispatch, getState) => 
       envForSave.auth = auth;
 
       environmentSchema
-        .validate(envForSave)
-        .then(() => ipcRenderer.invoke('renderer:save-environment', collection.pathname, envForSave))
+        .validate(envForSave, { stripUnknown: true })
+        .then((sanitizedEnv) => ipcRenderer.invoke('renderer:save-environment', collection.pathname, sanitizedEnv))
         .then(() => {
           dispatch(setCollectionEnvironmentAuth({
             collectionUid: collection.uid,

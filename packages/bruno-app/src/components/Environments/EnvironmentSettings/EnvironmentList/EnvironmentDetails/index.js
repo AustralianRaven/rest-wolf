@@ -1,7 +1,7 @@
 import { IconCopy, IconEdit, IconTrash, IconCheck, IconX, IconSearch } from '@tabler/icons';
 import { useEffect, useState, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { renameEnvironment, updateEnvironmentColor } from 'providers/ReduxStore/slices/collections/actions';
+import { renameEnvironment } from 'providers/ReduxStore/slices/collections/actions';
 import {
   addEnvironmentAuthStub,
   removeEnvironmentAuthStub
@@ -12,7 +12,6 @@ import CopyEnvironment from 'components/Environments/EnvironmentSettings/CopyEnv
 import DeleteEnvironment from 'components/Environments/EnvironmentSettings/DeleteEnvironment';
 import EnvironmentVariables from './EnvironmentVariables';
 import CollectionAuth from 'components/CollectionSettings/Auth';
-import ColorPicker from 'components/ColorPicker';
 import StyledWrapper from './StyledWrapper';
 
 const envAuthStubUid = (environmentUid) => `env-auth:${environmentUid}`;
@@ -229,10 +228,6 @@ const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuer
     }
   };
 
-  const handleColorChange = (color) => {
-    dispatch(updateEnvironmentColor(environment.uid, color, collection.uid));
-  };
-
   return (
     <StyledWrapper>
       {openDeleteModal && (
@@ -279,10 +274,7 @@ const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuer
               </div>
             </>
           ) : (
-            <div className="flex items-center gap-2">
-              <h2 className="title">{environment.name}</h2>
-              <ColorPicker color={environment.color} onChange={handleColorChange} />
-            </div>
+            <h2 className="title">{environment.name}</h2>
           )}
         </div>
         {nameError && isRenaming && <div className="title-error">{nameError}</div>}

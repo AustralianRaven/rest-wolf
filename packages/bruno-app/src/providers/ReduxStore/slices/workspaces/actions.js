@@ -697,16 +697,6 @@ export const switchWorkspace = (workspaceUid) => {
         dispatch(setSnapshotReady(true));
       }
     }
-
-    await loadWorkspaceCollectionsForSwitch(dispatch, workspace);
-    dispatch(showHomePage());
-
-    const permanentTabs = [
-      { type: 'overview', label: 'Overview' },
-      { type: 'environments', label: 'Global Configuration' }
-    ];
-    dispatch(initializeWorkspaceTabs({ workspaceUid, permanentTabs }));
-    dispatch(setActiveWorkspaceTab({ workspaceUid, type: 'overview' }));
   };
 };
 
