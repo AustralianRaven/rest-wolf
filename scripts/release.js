@@ -51,7 +51,7 @@ async function main() {
     console.warn(`You are on "${currentBranch}", not "main". The release branch will fork from here.`);
   }
 
-  sh('git fetch origin --tags');
+  sh('git fetch rest-wolf --tags');
 
   const pkg = JSON.parse(fs.readFileSync(ELECTRON_PKG, 'utf8'));
   const current = pkg.version;
@@ -86,7 +86,7 @@ async function main() {
 
   sh(`git add ${path.relative(process.cwd(), ELECTRON_PKG).replace(/\\/g, '/')}`);
   sh(`git commit -m "chore(release): v${next}"`);
-  sh(`git push -u origin ${branch}`);
+  sh(`git push -u rest-wolf ${branch}`);
 
   const title = `Release v${next}`;
   const body = [
