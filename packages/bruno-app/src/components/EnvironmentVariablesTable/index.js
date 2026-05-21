@@ -44,6 +44,8 @@ const EnvironmentVariablesTable = ({
   onDraftClear,
   setIsModified,
   renderExtraValueContent,
+  renderExtraButtonContent,
+  forceHasChanges = false,
   searchQuery = ''
 }) => {
   const { storedTheme } = useTheme();
@@ -388,7 +390,7 @@ const EnvironmentVariablesTable = ({
     const savedValues = environment.variables || [];
 
     // Compare without UIDs since they can be different but the actual data is the same
-    const hasChanges = JSON.stringify(variablesToSave.map(stripEnvVarUid)) !== JSON.stringify(savedValues.map(stripEnvVarUid));
+    const hasChanges = forceHasChanges || JSON.stringify(variablesToSave.map(stripEnvVarUid)) !== JSON.stringify(savedValues.map(stripEnvVarUid));
     if (!hasChanges) {
       toast.error('No changes to save');
       return;
@@ -453,6 +455,9 @@ const EnvironmentVariablesTable = ({
   const handleSaveRef = useRef(handleSave);
   handleSaveRef.current = handleSave;
 
+  const formikValuesRef = useRef(formik.values);
+  formikValuesRef.current = formik.values;
+
   useEffect(() => {
     const handleSaveEvent = () => {
       handleSaveRef.current();
@@ -463,6 +468,36 @@ const EnvironmentVariablesTable = ({
     return () => {
       window.removeEventListener('environment-save', handleSaveEvent);
     };
+  }, []);
+
+  useEffect(() => {
+    const handleVaultSecrets = (e) => {
+      const secrets = e.detail;
+      if (!secrets || typeof secrets !== 'object') return;
+
+      const updated = [...formikValuesRef.current];
+      Object.entries(secrets).forEach(([secretName, secretValue]) => {
+        const existingIndex = updated.findIndex((v) => v.name === secretName);
+        const isSecretVar = /password|secret|key/i.test(secretName);
+        if (existingIndex === -1) {
+          const emptyRowIndex = updated.length - 1;
+          updated.splice(emptyRowIndex, 0, {
+            uid: uuid(),
+            name: secretName,
+            value: secretValue,
+            type: 'text',
+            secret: isSecretVar,
+            enabled: true
+          });
+        } else {
+          updated[existingIndex] = { ...updated[existingIndex], value: secretValue, secret: isSecretVar };
+        }
+      });
+      formik.setValues(updated);
+    };
+
+    window.addEventListener('vault-secrets-fetched', handleVaultSecrets);
+    return () => window.removeEventListener('vault-secrets-fetched', handleVaultSecrets);
   }, []);
 
   const filteredVariables = useMemo(() => {
@@ -650,6 +685,7 @@ const EnvironmentVariablesTable = ({
           <button type="button" className="submit reset ml-2" onClick={handleReset} data-testid="reset-env">
             Reset
           </button>
+          {renderExtraButtonContent && renderExtraButtonContent({ onSave: handleSave })}
         </div>
       </div>
     </StyledWrapper>
