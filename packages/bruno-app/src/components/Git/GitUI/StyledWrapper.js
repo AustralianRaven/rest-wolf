@@ -129,6 +129,13 @@ const StyledWrapper = styled.div`
     font-size: ${(props) => props.theme.font.size.sm};
   }
 
+  .branch-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+
   .git-main {
     flex: 1;
     display: flex;

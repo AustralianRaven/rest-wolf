@@ -159,6 +159,12 @@ const StyledWrapper = styled.div`
     margin-left: 12px;
     color: ${(props) => props.theme.dropdown.selectedColor};
   }
+
+  .accent-section {
+    grid-column: 1 / -1;
+    padding: 10px 12px 4px;
+    border-top: 1px solid ${(props) => props.theme.border.border1};
+  }
 `;
 
 export default StyledWrapper;

@@ -16,6 +16,7 @@ import {
 } from '@tabler/icons';
 import Button from 'ui/Button';
 import ActionIcon from 'ui/ActionIcon';
+import MenuDropdown from 'ui/MenuDropdown';
 import useGitStatus from 'hooks/useGitStatus';
 import StyledWrapper from './StyledWrapper';
 
@@ -102,6 +103,24 @@ const GitUI = ({ collection }) => {
     await git.commit(message);
     setMessage('');
   };
+
+  // git itself blocks a checkout that would overwrite local edits; surface that message
+  // instead of trying to force or auto-stash it.
+  const switchBranch = async (branchName) => {
+    try {
+      await git.checkout(branchName);
+      setDiff(null);
+      setSelected(null);
+    } catch {
+      // useGitStatus already captured the message for the error banner
+    }
+  };
+
+  const branchItems = (status?.branches || []).map((branch) => ({
+    id: branch,
+    label: branch,
+    onClick: () => switchBranch(branch)
+  }));
 
   const runFetch = async () => {
     await git.fetch();
@@ -191,8 +210,13 @@ const GitUI = ({ collection }) => {
         )}
 
         <div className="branch-footer">
-          <IconGitBranch size={14} strokeWidth={1.5} />
-          <span>{status?.currentGitBranch || '—'}</span>
+          <MenuDropdown items={branchItems} placement="top-start" selectedItemId={status?.currentGitBranch} showTickMark>
+            <span className="branch-trigger" data-testid="git-branch-switcher">
+              <IconGitBranch size={14} strokeWidth={1.5} />
+              <span>{status?.currentGitBranch || '—'}</span>
+              <IconChevronDown size={13} strokeWidth={1.5} />
+            </span>
+          </MenuDropdown>
         </div>
       </div>
 

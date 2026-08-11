@@ -16,7 +16,8 @@ const {
   pullGitChanges,
   fetchChanges,
   canPush,
-  initGit
+  initGit,
+  checkoutGitBranch
 } = require('../utils/git');
 const { createDirectory, removePath } = require('../utils/filesystem');
 
@@ -108,6 +109,18 @@ const registerGitIpc = (mainWindow) => {
       }
       return Promise.reject(error);
     }
+  });
+
+  // git refuses to switch away from a dirty tree when the checkout would clobber local
+  // edits; that error is surfaced to the panel rather than being forced through.
+  ipcMain.handle('renderer:git-checkout', async (event, { collectionPath, branchName, processUid, shouldCreate }) => {
+    await checkoutGitBranch(mainWindow, {
+      gitRootPath: resolveGitRoot(collectionPath),
+      branchName,
+      processUid,
+      shouldCreate
+    });
+    return getGitPanelState({ collectionPath });
   });
 
   ipcMain.handle('renderer:git-status', (event, args) => getGitPanelState(args));

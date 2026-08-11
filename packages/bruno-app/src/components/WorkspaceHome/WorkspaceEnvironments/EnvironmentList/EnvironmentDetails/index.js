@@ -1,7 +1,7 @@
 import { IconCopy, IconEdit, IconTrash, IconCheck, IconX, IconSearch, IconDeviceFloppy } from '@tabler/icons';
 import { useState, useRef, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { renameGlobalEnvironment, updateGlobalEnvironmentColor } from 'providers/ReduxStore/slices/global-environments';
+import { renameGlobalEnvironment } from 'providers/ReduxStore/slices/global-environments';
 import { addEnvironmentAuthStub, removeEnvironmentAuthStub } from 'providers/ReduxStore/slices/collections';
 import { updateTabState } from 'providers/ReduxStore/slices/tabs';
 import CollectionAuth from 'components/CollectionSettings/Auth';
@@ -10,7 +10,6 @@ import toast from 'react-hot-toast';
 import CopyEnvironment from '../../CopyEnvironment';
 import DeleteEnvironment from '../../DeleteEnvironment';
 import EnvironmentVariables from './EnvironmentVariables';
-import ColorPicker from 'components/ColorPicker';
 import ActionIcon from 'ui/ActionIcon';
 import ResponsiveTabs from 'ui/ResponsiveTabs';
 import useEnvironmentTabs from 'hooks/useEnvironmentTabs';
@@ -206,10 +205,6 @@ const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuer
     }
   };
 
-  const handleColorChange = (color) => {
-    dispatch(updateGlobalEnvironmentColor(environment.uid, color));
-  };
-
   const handleSaveAll = () => {
     window.dispatchEvent(new Event('environment-save-all'));
   };
@@ -263,10 +258,7 @@ const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuer
               </div>
             </>
           ) : (
-            <div className="flex items-center gap-2">
-              <h2 className="title">{environment.name}</h2>
-              <ColorPicker color={environment.color} onChange={handleColorChange} />
-            </div>
+            <h2 className="title">{environment.name}</h2>
           )}
         </div>
         {nameError && isRenaming && <div className="title-error">{nameError}</div>}

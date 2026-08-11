@@ -58,7 +58,9 @@ const useGitStatus = (collectionPath) => {
     commit: (message) => run('renderer:git-commit', { message }),
     fetch: () => run('renderer:git-fetch'),
     pull: () => run('renderer:git-pull', { processUid: uuid() }),
-    push: () => run('renderer:git-push', { processUid: uuid() })
+    push: () => run('renderer:git-push', { processUid: uuid() }),
+    checkout: (branchName, shouldCreate = false) =>
+      run('renderer:git-checkout', { branchName, shouldCreate, processUid: uuid() })
   };
 };
 
