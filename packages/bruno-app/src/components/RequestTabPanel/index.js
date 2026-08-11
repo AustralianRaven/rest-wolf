@@ -26,6 +26,7 @@ import FolderSettings from 'components/FolderSettings';
 import { getGlobalEnvironmentVariables, getGlobalEnvironmentVariablesMasked } from 'utils/collections/index';
 import { produce } from 'immer';
 import CollectionOverview from 'components/CollectionSettings/Overview';
+import GitUI from 'components/Git/GitUI';
 import RequestNotLoaded from './RequestNotLoaded';
 import RequestIsLoading from './RequestIsLoading';
 import RequestTabPanelLoading from './RequestTabPanelLoading';
@@ -547,6 +548,10 @@ const RequestTabPanel = () => {
 
   if (focusedTab.type === 'collection-overview') {
     return <CollectionOverview collection={collection} />;
+  }
+
+  if (focusedTab.type === 'git-ui') {
+    return <GitUI collection={collection} />;
   }
 
   if (focusedTab.type === 'folder-settings') {

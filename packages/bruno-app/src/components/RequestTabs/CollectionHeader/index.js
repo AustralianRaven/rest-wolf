@@ -39,6 +39,7 @@ import MenuDropdown from 'ui/MenuDropdown';
 import CloseWorkspace from 'components/Sidebar/CloseWorkspace';
 import CreateWorkspace from 'components/WorkspaceSidebar/CreateWorkspace';
 import EnvironmentSelector from 'components/Environments/EnvironmentSelector';
+import GitBranchChip from 'components/Git/GitBranchChip';
 import ToolHint from 'components/ToolHint';
 import JsSandboxMode from 'components/SecuritySettings/JsSandboxMode';
 import ActionIcon from 'ui/ActionIcon';
@@ -790,6 +791,8 @@ const CollectionHeader = ({ collection, isScratchCollection }) => {
                   </ActionIcon>
                 </ToolHint>
               )}
+              {/* Git branch - only for collections inside a git repository */}
+              <GitBranchChip collection={collection} />
               {/* Runner - always visible */}
               <ToolHint text="Runner" toolhintId="RunnerToolhintId" place="bottom">
                 <ActionIcon onClick={handleRun} aria-label="Runner" size="sm" data-testid="runner">
