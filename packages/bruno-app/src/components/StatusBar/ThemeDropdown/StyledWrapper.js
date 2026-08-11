@@ -5,7 +5,9 @@ const StyledWrapper = styled.div`
   /* Main container */
   .theme-menu {
     min-width: 200px;
-    height: 325px;
+    /* min-height rather than a fixed height so the menu grows for the accent row
+       instead of spilling its last section out over the status bar */
+    min-height: 325px;
     padding: 8px;
     background: ${(props) => props.theme.dropdown.bg};
     border: 1px solid ${(props) => props.theme.dropdown.border};
@@ -161,9 +163,18 @@ const StyledWrapper = styled.div`
   }
 
   .accent-section {
-    grid-column: 1 / -1;
-    padding: 10px 12px 4px;
-    border-top: 1px solid ${(props) => props.theme.border.border1};
+    margin: 8px -8px 0;
+    padding: 10px 16px 4px;
+    border-top: 1px solid ${(props) => props.theme.dropdown.separator};
+
+    /* This menu is anchored to the status bar, so the swatch's own dropdown has to
+       open upward or it lands off the bottom of the screen. */
+    .color-picker-dropdown {
+      top: auto;
+      bottom: 100%;
+      margin-top: 0;
+      margin-bottom: 4px;
+    }
   }
 `;
 
