@@ -122,10 +122,23 @@ const GitUI = ({ collection }) => {
     onClick: () => switchBranch(branch)
   }));
 
+  // run() rethrows so callers can branch on failure; these buttons only need the toast,
+  // so the rejection is absorbed here rather than escaping as an unhandled rejection.
+  const ignoreFailure = (fn) => () => { fn()?.catch?.(() => {}); };
+
   const runFetch = async () => {
     await git.fetch();
     setLastFetched(new Date());
   };
+
+  // Mirrors VS Code's wording so the button says what it is about to move.
+  const syncLabel = (() => {
+    if (git.loading) return 'Syncing…';
+    if (ahead && behind) return `Sync ${behind} down, ${ahead} up`;
+    if (ahead) return `Push ${ahead} commit${ahead > 1 ? 's' : ''}`;
+    if (behind) return `Pull ${behind} commit${behind > 1 ? 's' : ''}`;
+    return 'Sync Changes';
+  })();
 
   if (status && status.initialized === false) {
     return (
@@ -133,7 +146,7 @@ const GitUI = ({ collection }) => {
         <div className="git-main">
           <IconGitBranch size={44} strokeWidth={1.2} />
           <div className="main-hint">This collection is not under version control yet.</div>
-          <Button size="sm" onClick={git.init} data-testid="git-initialize">
+          <Button size="sm" onClick={ignoreFailure(git.init)} data-testid="git-initialize">
             Initialize
           </Button>
           {git.error && <div className="error-banner">{git.error}</div>}
@@ -169,7 +182,7 @@ const GitUI = ({ collection }) => {
                 size="sm"
                 className="w-full mt-2"
                 disabled={!message.trim() || !hasChanges || git.loading}
-                onClick={commit}
+                onClick={ignoreFailure(commit)}
                 data-testid="git-commit-btn"
               >
                 Commit Changes
@@ -227,20 +240,27 @@ const GitUI = ({ collection }) => {
           <IconGitBranch size={44} strokeWidth={1.2} />
           <div className="main-hint">Perform git actions or open files from sidebar to view</div>
 
+          <Button size="sm" onClick={ignoreFailure(git.sync)} disabled={git.loading} data-testid="git-sync">
+            <IconRefresh size={14} strokeWidth={1.5} className="mr-1" />
+            {syncLabel}
+          </Button>
+
           <div className="action-row">
-            <Button size="sm" color="secondary" onClick={runFetch} disabled={git.loading} data-testid="git-fetch">
+            <Button size="sm" color="secondary" onClick={ignoreFailure(runFetch)} disabled={git.loading} data-testid="git-fetch">
               <IconRefresh size={14} strokeWidth={1.5} className="mr-1" />
               Fetch
             </Button>
-            <Button size="sm" color="secondary" onClick={git.pull} disabled={git.loading} data-testid="git-pull">
+            <Button size="sm" color="secondary" onClick={ignoreFailure(git.pull)} disabled={git.loading} data-testid="git-pull">
               <IconDownload size={14} strokeWidth={1.5} className="mr-1" />
               Pull
             </Button>
-            <Button size="sm" onClick={git.push} disabled={git.loading} data-testid="git-push">
+            <Button size="sm" color="secondary" onClick={ignoreFailure(git.push)} disabled={git.loading} data-testid="git-push">
               <IconUpload size={14} strokeWidth={1.5} className="mr-1" />
               Push
             </Button>
           </div>
+
+          {git.error && <div className="error-banner">{git.error}</div>}
 
           {lastFetched && (
             <div className="meta-line">
