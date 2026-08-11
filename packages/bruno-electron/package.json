@@ -24,7 +24,8 @@
     "publish:mac": "electron-builder --mac --config electron-builder-config.js --publish always",
     "publish:linux": "electron-builder --linux AppImage --config electron-builder-config.js --publish always",
     "pack": "electron-builder --dir",
-    "test": "node --experimental-vm-modules $(npx which jest)"
+    "test": "node --experimental-vm-modules $(npx which jest)",
+    "test:ci": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js"
   },
   "jest": {
     "modulePaths": [
@@ -32,6 +33,8 @@
     ]
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "3.0.15",
+    "@ai-sdk/openai": "3.0.12",
     "@aws-sdk/credential-providers": "3.1019.0",
     "@azure/identity": "^4.0.0",
     "@azure/keyvault-secrets": "^4.7.0",
@@ -46,14 +49,17 @@
     "@usebruno/node-machine-id": "^2.0.0",
     "@usebruno/requests": "^0.1.0",
     "@usebruno/schema": "0.7.0",
+    "@usebruno/sqlite": "0.1.0",
     "about-window": "^1.15.2",
     "adm-zip": "^0.5.16",
+    "ai": "6.0.39",
     "archiver": "^7.0.1",
     "aws4-axios": "^3.3.15",
-    "axios": "1.13.6",
+    "axios": "1.16.0",
     "axios-ntlm": "^1.4.2",
     "chai": "^4.3.7",
     "chokidar": "^3.5.3",
+    "cors": "^2.8.5",
     "content-disposition": "^0.5.4",
     "decomment": "^0.9.5",
     "diff": "^8.0.3",
@@ -62,6 +68,7 @@
     "electron-notarize": "^1.2.2",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.8.3",
+    "express": "^4.21.2",
     "electron-util": "^0.17.2",
     "extract-zip": "^2.0.1",
     "form-data": "4.0.4",
@@ -73,7 +80,7 @@
     "iconv-lite": "^0.6.3",
     "is-valid-path": "^0.1.1",
     "js-yaml": "^4.1.1",
-    "lodash": "^4.17.21",
+    "lodash": "4.18.1",
     "mime-types": "^2.1.35",
     "nanoid": "3.3.8",
     "qs": "^6.14.1",
@@ -81,7 +88,9 @@
     "socks-proxy-agent": "^8.0.2",
     "tough-cookie": "^6.0.0",
     "uuid": "^10.0.0",
-    "yup": "^0.32.11"
+    "workerpool": "10.0.2",
+    "yup": "^0.32.11",
+    "zod": "^4.1.8"
   },
   "optionalDependencies": {
     "dmg-license": "^1.0.11"

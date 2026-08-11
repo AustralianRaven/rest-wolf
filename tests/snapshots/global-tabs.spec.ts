@@ -3,7 +3,8 @@ import {
   createCollection,
   createRequest,
   openRequest,
-  createEnvironment
+  createEnvironment,
+  waitForReadyPage
 } from '../utils/page';
 import { buildCommonLocators } from '../utils/page/locators';
 
@@ -13,9 +14,8 @@ test.describe('Snapshot: Global Tab Restoration', () => {
     const colPath = await createTmpDir('col');
 
     const app = await launchElectronApp({ userDataPath });
-    const page = await app.firstWindow();
+    const page = await waitForReadyPage(app);
     const locators = buildCommonLocators(page);
-    await page.locator('[data-app-state="loaded"]').waitFor({ timeout: 30000 });
 
     await test.step('Create collection and open singleton tabs', async () => {
       await createCollection(page, 'TestCol', colPath);
@@ -36,8 +36,7 @@ test.describe('Snapshot: Global Tab Restoration', () => {
 
     await test.step('Verify restored singleton tabs can be focused without duplication', async () => {
       const app2 = await launchElectronApp({ userDataPath });
-      const page2 = await app2.firstWindow();
-      await page2.locator('[data-app-state="loaded"]').waitFor({ timeout: 30000 });
+      const page2 = await waitForReadyPage(app2);
 
       const locators2 = buildCommonLocators(page2);
 
@@ -52,6 +51,34 @@ test.describe('Snapshot: Global Tab Restoration', () => {
 
       await locators2.openPreferences().click();
       await expect(locators2.tabs.requestTab('Preferences')).toHaveCount(1);
+
+      await closeElectronApp(app2);
+    });
+  });
+
+  test('workspace-level active tab is restored after restart', async ({ launchElectronApp, createTmpDir }) => {
+    const userDataPath = await createTmpDir('snap-workspace-active-tab');
+
+    const app = await launchElectronApp({ userDataPath });
+    const page = await waitForReadyPage(app);
+
+    await test.step('Switch to workspace environments tab', async () => {
+      const locators = buildCommonLocators(page);
+      await locators.tabs.requestTab('Environments').click();
+      await expect(locators.tabs.activeRequestTab()).toContainText('Environments');
+    });
+
+    await test.step('Close and restart app', async () => {
+      await page.waitForTimeout(2000);
+      await closeElectronApp(app);
+    });
+
+    await test.step('Verify workspace environments is restored as active tab', async () => {
+      const app2 = await launchElectronApp({ userDataPath });
+      const page2 = await waitForReadyPage(app2);
+
+      const locators2 = buildCommonLocators(page2);
+      await expect(locators2.tabs.activeRequestTab()).toContainText('Environments', { timeout: 15000 });
 
       await closeElectronApp(app2);
     });

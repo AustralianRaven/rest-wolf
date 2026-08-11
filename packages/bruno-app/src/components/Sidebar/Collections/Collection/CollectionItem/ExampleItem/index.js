@@ -182,6 +182,7 @@ const ExampleItem = ({ example, item, collection }) => {
   return (
     <StyledWrapper
       ref={exampleRef}
+      data-testid="sidebar-response-example-item"
       className={itemRowClassName}
       onClick={handleExampleClick}
       onDoubleClick={handleDoubleClick}

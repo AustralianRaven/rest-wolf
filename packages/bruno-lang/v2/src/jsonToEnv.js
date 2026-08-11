@@ -1,18 +1,20 @@
 const _ = require('lodash');
-const { getValueString, indentString, serializeAnnotations } = require('./utils');
+const { getValueString, indentString, serializeAnnotations, buildAnnotationsFromVariable } = require('./utils');
 
 const envToJson = (json) => {
   const meta = _.get(json, 'meta', null);
   const variables = _.get(json, 'variables', []);
+  const externalSecrets = _.get(json, 'externalSecrets', null);
   const color = _.get(json, 'color', null);
 
   const vars = variables
     .filter((variable) => !variable.secret)
     .map((variable) => {
-      const { name, value, enabled, annotations } = variable;
+      const { name, value, enabled } = variable;
       const prefix = enabled ? '' : '~';
+      const annotationPrefix = serializeAnnotations(buildAnnotationsFromVariable(variable));
 
-      return indentString(`${serializeAnnotations(annotations)}${prefix}${name}: ${getValueString(value)}`);
+      return indentString(`${annotationPrefix}${prefix}${name}: ${getValueString(value)}`);
     });
 
   const secretVars = variables
@@ -20,7 +22,8 @@ const envToJson = (json) => {
     .map((variable) => {
       const { name, enabled } = variable;
       const prefix = enabled ? '' : '~';
-      return indentString(`${prefix}${name}`);
+      const annotationPrefix = serializeAnnotations(buildAnnotationsFromVariable(variable));
+      return indentString(`${annotationPrefix}${prefix}${name}`);
     });
 
   let metaBlock = '';
@@ -55,6 +58,17 @@ ${vars.join('\n')}
     output += `vars:secret [
 ${secretVars.join(',\n')}
 ]
+`;
+  }
+
+  if (externalSecrets && externalSecrets.type) {
+    const serializedVariables = (externalSecrets.variables || []).map(({ name, value }) =>
+      indentString(`${name}: ${getValueString(value)}`)
+    );
+
+    output += `vars:externalsecrets:${externalSecrets.type} {
+${serializedVariables.join('\n')}
+}
 `;
   }
 

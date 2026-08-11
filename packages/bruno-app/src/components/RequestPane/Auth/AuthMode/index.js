@@ -2,6 +2,7 @@ import React, { useMemo, useCallback } from 'react';
 import get from 'lodash/get';
 import { IconCaretDown } from '@tabler/icons';
 import MenuDropdown from 'ui/MenuDropdown';
+import StatusBadge from 'ui/StatusBadge/index';
 import { useDispatch, useSelector } from 'react-redux';
 import { updateAuth, updateRequestAuthMode } from 'providers/ReduxStore/slices/collections';
 import { humanizeRequestAuthMode } from 'utils/collections';
@@ -17,6 +18,17 @@ const BUILT_IN_ITEMS = (onModeChange) => ([
   { id: 'oauth2', label: 'OAuth 2.0', onClick: () => onModeChange('oauth2') },
   { id: 'wsse', label: 'WSSE Auth', onClick: () => onModeChange('wsse') },
   { id: 'apikey', label: 'API Key', onClick: () => onModeChange('apikey') },
+  {
+    id: 'akamai-edgegrid',
+    label: (
+      <span className="flex items-center gap-2">
+        Akamai EdgeGrid
+        <StatusBadge status="info" size="xs">Beta</StatusBadge>
+      </span>
+    ),
+    ariaLabel: 'Akamai EdgeGrid (Beta)',
+    onClick: () => onModeChange('akamai-edgegrid')
+  },
   { id: 'inherit', label: 'Inherit', onClick: () => onModeChange('inherit') },
   { id: 'inherit-environment', label: 'Inherit from Environment', onClick: () => onModeChange('inherit-environment') },
   { id: 'none', label: 'No Auth', onClick: () => onModeChange('none') }
@@ -71,7 +83,7 @@ const AuthMode = ({ item, collection }) => {
 
   return (
     <StyledWrapper>
-      <div className="inline-flex items-center cursor-pointer auth-mode-selector">
+      <div className="inline-flex items-center cursor-pointer auth-mode-selector" data-testid="auth-mode-selector">
         <MenuDropdown
           items={groups}
           placement="bottom-end"
@@ -79,8 +91,9 @@ const AuthMode = ({ item, collection }) => {
           showTickMark={true}
           showGroupDividers={true}
           groupStyle="select"
+          data-testid="auth-mode-dropdown"
         >
-          <div className="flex items-center justify-center auth-mode-label select-none">
+          <div className="flex items-center justify-center auth-mode-label select-none" data-testid="auth-mode-label">
             {triggerLabel} <IconCaretDown className="caret ml-1" size={14} strokeWidth={2} />
           </div>
         </MenuDropdown>

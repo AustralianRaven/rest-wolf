@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 import { uuid } from 'utils/common';
 import Button from 'ui/Button';
 
-const EnvironmentVariables = ({ environment, setIsModified, collection, searchQuery = '' }) => {
+const EnvironmentVariables = ({ environment, setIsModified, collection, searchQuery = '', variableType = 'variables' }) => {
   const dispatch = useDispatch();
   const { globalEnvironmentDraft } = useSelector((state) => state.globalEnvironments);
   const preferences = useSelector((state) => state.app.preferences);
@@ -169,6 +169,7 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
       forceHasChanges={vaultHasChanges}
       renderExtraButtonContent={renderVaultUI}
       searchQuery={searchQuery}
+      variableType={variableType}
     />
   );
 };

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import get from 'lodash/get';
 import AwsV4Auth from './AwsV4Auth';
 import BearerAuth from './BearerAuth';
@@ -12,20 +12,11 @@ import { saveRequest } from 'providers/ReduxStore/slices/collections/actions';
 import { useDispatch, useSelector } from 'react-redux';
 
 import ApiKeyAuth from './ApiKeyAuth';
+import EdgeGridAuth from './EdgeGridAuth';
 import StyledWrapper from './StyledWrapper';
 import { humanizeRequestAuthMode } from 'utils/collections';
 import OAuth2 from './OAuth2/index';
-import { findItemInCollection, findParentItemInCollection } from 'utils/collections/index';
-
-const getTreePathFromCollectionToItem = (collection, _item) => {
-  let path = [];
-  let item = findItemInCollection(collection, _item?.uid);
-  while (item) {
-    path.unshift(item);
-    item = findParentItemInCollection(collection, item?.uid);
-  }
-  return path;
-};
+import { getEffectiveAuthSource } from 'utils/auth';
 
 const Auth = ({ item, collection }) => {
   const dispatch = useDispatch();
@@ -37,7 +28,6 @@ const Auth = ({ item, collection }) => {
   const activeEnvUid = collection.activeEnvironmentUid;
   const activeEnv = (collection.environments || []).find((e) => e.uid === activeEnvUid)
     || globalEnvs.find((e) => e.uid === activeGlobalUid);
-  const requestTreePath = getTreePathFromCollectionToItem(collection, item);
 
   // Create a request object to pass to the auth components
   const request = item.draft
@@ -49,34 +39,10 @@ const Auth = ({ item, collection }) => {
     return dispatch(saveRequest(item.uid, collection.uid));
   };
 
-  const getEffectiveAuthSource = () => {
-    if (authMode !== 'inherit') return null;
-
-    const collectionRoot = collection?.draft?.root || collection?.root || {};
-    const collectionAuth = get(collectionRoot, 'request.auth');
-    let effectiveSource = {
-      type: 'collection',
-      name: 'Collection',
-      auth: collectionAuth
-    };
-
-    // Check folders in reverse to find the closest auth configuration
-    for (let i of [...requestTreePath].reverse()) {
-      if (i.type === 'folder') {
-        const folderAuth = get(i, 'root.request.auth');
-        if (folderAuth && folderAuth.mode && folderAuth.mode !== 'inherit') {
-          effectiveSource = {
-            type: 'folder',
-            name: i.name,
-            auth: folderAuth
-          };
-          break;
-        }
-      }
-    }
-
-    return effectiveSource;
-  };
+  const inheritedSource = useMemo(
+    () => (authMode === 'inherit' ? getEffectiveAuthSource(collection, item) : null),
+    [authMode, item, collection]
+  );
 
   const getAuthView = () => {
     switch (authMode) {
@@ -110,13 +76,15 @@ const Auth = ({ item, collection }) => {
       case 'apikey': {
         return <ApiKeyAuth collection={collection} item={item} request={request} save={save} updateAuth={updateAuth} />;
       }
+      case 'akamai-edgegrid': {
+        return <EdgeGridAuth collection={collection} item={item} request={request} save={save} updateAuth={updateAuth} />;
+      }
       case 'inherit': {
-        const source = getEffectiveAuthSource();
         return (
           <>
             <div className="flex flex-row w-full gap-2">
-              <div>Auth inherited from {source.name}: </div>
-              <div className="inherit-mode-text">{humanizeRequestAuthMode(source.auth?.mode)}</div>
+              <div>Auth inherited from {inheritedSource.name}: </div>
+              <div className="inherit-mode-text" data-testid="inherited-auth-mode">{humanizeRequestAuthMode(inheritedSource.auth?.mode)}</div>
             </div>
           </>
         );
