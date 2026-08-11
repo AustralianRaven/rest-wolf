@@ -17,7 +17,8 @@ const {
   fetchChanges,
   canPush,
   initGit,
-  checkoutGitBranch
+  checkoutGitBranch,
+  getCurrentGitBranch
 } = require('../utils/git');
 const { createDirectory, removePath } = require('../utils/filesystem');
 
@@ -135,12 +136,15 @@ const registerGitIpc = (mainWindow) => {
 
   // push/pull stream progress to the renderer over main:update-git-operation-progress,
   // so they take the window and a processUid the way clone does.
+  // Both look the branch up by name, so the current branch is resolved here rather than
+  // relying on git's own defaults.
   ipcMain.handle('renderer:git-push', async (event, { collectionPath, processUid, remote, remoteBranch }) => {
+    const gitRootPath = resolveGitRoot(collectionPath);
     await pushGitChanges(mainWindow, {
-      gitRootPath: resolveGitRoot(collectionPath),
+      gitRootPath,
       processUid,
-      remote,
-      remoteBranch
+      remote: remote || 'origin',
+      remoteBranch: remoteBranch || (await getCurrentGitBranch(gitRootPath))
     });
     return getGitPanelState({ collectionPath });
   });
@@ -148,11 +152,12 @@ const registerGitIpc = (mainWindow) => {
   // pullGitChanges rejects unless strategy is one of its two accepted values, so the
   // default is spelled out here rather than left to the caller.
   ipcMain.handle('renderer:git-pull', async (event, { collectionPath, processUid, remote, remoteBranch, strategy }) => {
+    const gitRootPath = resolveGitRoot(collectionPath);
     await pullGitChanges(mainWindow, {
-      gitRootPath: resolveGitRoot(collectionPath),
+      gitRootPath,
       processUid,
-      remote,
-      remoteBranch,
+      remote: remote || 'origin',
+      remoteBranch: remoteBranch || (await getCurrentGitBranch(gitRootPath)),
       strategy: strategy || '--no-rebase'
     });
     return getGitPanelState({ collectionPath });
