@@ -70,7 +70,7 @@ const resolveSecretRefs = async ({ refs = [] }) => {
 
     sources.push(
       resolved
-        || { secretName, vaultName: ref.vaultName || null, managerName: null, ok: false, error: attempts.join('; '), variables: {} }
+      || { secretName, vaultName: ref.vaultName || null, managerName: null, ok: false, error: attempts.join('; '), variables: {} }
     );
   }
 
