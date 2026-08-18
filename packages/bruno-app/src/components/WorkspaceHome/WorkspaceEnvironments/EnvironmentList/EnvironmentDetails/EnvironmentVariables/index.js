@@ -86,12 +86,18 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
     window.dispatchEvent(new CustomEvent('vault-secrets-fetched', { detail: merged }));
   }, []);
 
+  // Removes the rows from the table only; the environment still has to be saved, so a
+  // mis-click is undone by Reset.
+  const handleClear = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('vault-secrets-cleared'));
+  }, []);
+
   const renderVaultPanel = useCallback(() => {
     if (variableType !== 'secrets') return null;
     return (
-      <VaultSecrets refs={secretRefs} onRefsChange={setSecretRefs} onApply={handleApply} />
+      <VaultSecrets refs={secretRefs} onRefsChange={setSecretRefs} onApply={handleApply} onClear={handleClear} />
     );
-  }, [variableType, secretRefs, handleApply]);
+  }, [variableType, secretRefs, handleApply, handleClear]);
 
   // The vault panel and the table are siblings in a scrolling column: the surrounding
   // layout does not scroll, so an unbounded panel would push the table's Save button out

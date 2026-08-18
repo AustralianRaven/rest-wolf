@@ -36,7 +36,7 @@ export const serializeSecretRefs = (refs) =>
     .map((ref) => (ref.vaultName ? `${ref.vaultName}:${ref.secretName.trim()}` : ref.secretName.trim()))
     .join(',');
 
-const VaultSecrets = ({ refs, onRefsChange, onApply, busy }) => {
+const VaultSecrets = ({ refs, onRefsChange, onApply, onClear, busy }) => {
   const [managers, setManagers] = useState([]);
   const [resolved, setResolved] = useState(null);
   const [selectedSource, setSelectedSource] = useState('__merged__');
@@ -121,6 +121,10 @@ const VaultSecrets = ({ refs, onRefsChange, onApply, busy }) => {
             Apply {Object.keys(resolved.merged).length} to secrets
           </Button>
         )}
+        <Button size="sm" color="secondary" variant="ghost" onClick={onClear} disabled={busy} data-testid="clear-vault-secrets">
+          <IconTrash size={14} strokeWidth={1.5} className="mr-1" />
+          Clear secrets
+        </Button>
       </div>
 
       {refs.map((ref, index) => (

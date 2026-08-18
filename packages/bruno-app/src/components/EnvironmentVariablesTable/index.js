@@ -881,8 +881,26 @@ const EnvironmentVariablesTable = ({
       formik.setValues(updated);
     };
 
+    // Bulk-added rows need a bulk removal to match; Reset only reverts to the saved
+    // state, which is no help once the fetched secrets have been saved.
+    const handleVaultClear = () => {
+      const kept = formikValuesRef.current.filter((variable) => !variable.secret);
+      formik.setValues(kept.length ? kept : [{
+        uid: uuid(),
+        name: '',
+        value: '',
+        type: 'text',
+        secret: false,
+        enabled: true
+      }]);
+    };
+
     window.addEventListener('vault-secrets-fetched', handleVaultSecrets);
-    return () => window.removeEventListener('vault-secrets-fetched', handleVaultSecrets);
+    window.addEventListener('vault-secrets-cleared', handleVaultClear);
+    return () => {
+      window.removeEventListener('vault-secrets-fetched', handleVaultSecrets);
+      window.removeEventListener('vault-secrets-cleared', handleVaultClear);
+    };
   }, []);
 
   const filteredVariables = useMemo(() => {
