@@ -3,7 +3,6 @@ import { rgba } from 'polished';
 import { useTheme } from 'providers/Theme';
 import themes, { getLightThemes, getDarkThemes } from 'themes/index';
 import { IconBrightnessUp, IconMoon, IconDeviceDesktop } from '@tabler/icons';
-import ColorPicker from 'components/ColorPicker';
 import StyledWrapper from './StyledWrapper';
 
 const ThemePreview = ({ themeId, isDark }) => {
@@ -43,11 +42,7 @@ const Themes = () => {
     themeVariantLight,
     setThemeVariantLight,
     themeVariantDark,
-    setThemeVariantDark,
-    customAccentColorLight = '#546de5',
-    setCustomAccentColorLight,
-    customAccentColorDark = '#546de5',
-    setCustomAccentColorDark
+    setThemeVariantDark
   } = useTheme();
 
   const lightThemes = getLightThemes();
@@ -61,30 +56,6 @@ const Themes = () => {
 
   const handleModeChange = (mode) => {
     setStoredTheme(mode);
-  };
-
-  const handleLightColorChange = (color) => {
-    if (setCustomAccentColorLight) {
-      setCustomAccentColorLight(color);
-    }
-  };
-
-  const handleDarkColorChange = (color) => {
-    if (setCustomAccentColorDark) {
-      setCustomAccentColorDark(color);
-    }
-  };
-
-  const handleLightColorReset = () => {
-    if (setCustomAccentColorLight) {
-      setCustomAccentColorLight('#546de5');
-    }
-  };
-
-  const handleDarkColorReset = () => {
-    if (setCustomAccentColorDark) {
-      setCustomAccentColorDark('#546de5');
-    }
   };
 
   const renderThemeVariants = (themes, selectedVariant, onSelect, label) => (
@@ -102,28 +73,6 @@ const Themes = () => {
       </div>
     </div>
   );
-
-  const renderCustomizationSection = (themeMode, customColor, onColorChange, onColorReset) => {
-    // Add safety checks to prevent errors
-    if (!customColor || !onColorChange || !onColorReset) {
-      return null;
-    }
-
-    return (
-      <div className="customization-section">
-        <div className="customization-header">
-          <span className="customization-title">Customization</span>
-          <span className="customization-subtitle">Personalize your {themeMode} theme</span>
-        </div>
-        <ColorPicker
-          label={`${themeMode.charAt(0).toUpperCase() + themeMode.slice(1)} Accent Color`}
-          value={customColor}
-          onChange={onColorChange}
-          onReset={onColorReset}
-        />
-      </div>
-    );
-  };
 
   return (
     <StyledWrapper>
@@ -158,7 +107,6 @@ const Themes = () => {
           <>
             {renderThemeVariants(lightThemes, themeVariantLight, setThemeVariantLight, 'Light Theme')}
             <div className="section-divider" />
-            {renderCustomizationSection('light', customAccentColorLight, handleLightColorChange, handleLightColorReset)}
           </>
         )}
 
@@ -166,7 +114,6 @@ const Themes = () => {
           <>
             {renderThemeVariants(darkThemes, themeVariantDark, setThemeVariantDark, 'Dark Theme')}
             <div className="section-divider" />
-            {renderCustomizationSection('dark', customAccentColorDark, handleDarkColorChange, handleDarkColorReset)}
           </>
         )}
 
@@ -174,11 +121,9 @@ const Themes = () => {
           <>
             {renderThemeVariants(lightThemes, themeVariantLight, setThemeVariantLight, 'Light Theme')}
             <div className="section-divider" />
-            {renderCustomizationSection('light', customAccentColorLight, handleLightColorChange, handleLightColorReset)}
             <div className="section-divider" />
             {renderThemeVariants(darkThemes, themeVariantDark, setThemeVariantDark, 'Dark Theme')}
             <div className="section-divider" />
-            {renderCustomizationSection('dark', customAccentColorDark, handleDarkColorChange, handleDarkColorReset)}
           </>
         )}
       </div>

@@ -10,6 +10,22 @@ const registerSnapshotIpc = () => {
     return snapshotManager.getTabs(collectionPathname, workspacePathname);
   });
 
+  ipcMain.handle('renderer:snapshot:get-collection', async (event, collectionPathname, workspacePathname) => {
+    return snapshotManager.getCollection(collectionPathname, workspacePathname);
+  });
+
+  ipcMain.handle('renderer:snapshot:get-sidebar', async () => {
+    return snapshotManager.getSidebar();
+  });
+
+  ipcMain.on('internal:snapshot:reset', () => {
+    try {
+      snapshotManager.resetSnapshot();
+    } catch (err) {
+      // digest error if reset fails
+    }
+  });
+
   ipcMain.handle('renderer:snapshot:save', async (event, data) => {
     return snapshotManager.saveSnapshot(data);
   });

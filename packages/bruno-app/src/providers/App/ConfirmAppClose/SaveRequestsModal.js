@@ -7,8 +7,9 @@ import { useDispatch } from 'react-redux';
 import { findCollectionByUid, flattenItems, isItemARequest, hasRequestChanges, findEnvironmentInCollection } from 'utils/collections';
 import { pluralizeWord } from 'utils/common';
 import { getInvalidVariableNames } from 'utils/common/variables';
+import { isEnvironmentValidationError } from 'utils/environments';
 import { completeQuitFlow } from 'providers/ReduxStore/slices/app';
-import { saveMultipleRequests, saveMultipleCollections, saveMultipleFolders, saveEnvironment, closeTabs } from 'providers/ReduxStore/slices/collections/actions';
+import { saveRequest, saveMultipleRequests, saveMultipleCollections, saveMultipleFolders, saveEnvironment, closeTabs } from 'providers/ReduxStore/slices/collections/actions';
 import { saveGlobalEnvironment, clearGlobalEnvironmentDraft } from 'providers/ReduxStore/slices/global-environments';
 import { deleteRequestDraft, deleteCollectionDraft, deleteFolderDraft, clearEnvironmentsDraft } from 'providers/ReduxStore/slices/collections';
 import { IconAlertTriangle } from '@tabler/icons';
@@ -150,6 +151,8 @@ const SaveRequestsModal = ({ onClose, forceCloseTabs = false, tabUidsToClose = [
       const collectionDrafts = allDrafts.filter((d) => d.type === 'collection');
       const folderDrafts = allDrafts.filter((d) => d.type === 'folder');
       const requestDrafts = allDrafts.filter((d) => isItemARequest(d));
+      const transientRequestDrafts = requestDrafts.filter((d) => d.isTransient);
+      const nonTransientRequestDrafts = requestDrafts.filter((d) => !d.isTransient);
       const collectionEnvironmentDrafts = allDrafts.filter((d) => d.type === 'collection-environment');
       const globalEnvironmentDrafts = allDrafts.filter((d) => d.type === 'global-environment');
 
@@ -164,8 +167,18 @@ const SaveRequestsModal = ({ onClose, forceCloseTabs = false, tabUidsToClose = [
       }
 
       // Save all request drafts
-      if (requestDrafts.length > 0) {
-        await dispatch(saveMultipleRequests(requestDrafts));
+      if (nonTransientRequestDrafts.length > 0) {
+        await dispatch(saveMultipleRequests(nonTransientRequestDrafts));
+      }
+
+      if (transientRequestDrafts.length > 0) {
+        await Promise.all(
+          transientRequestDrafts.map((draft) =>
+            dispatch(saveRequest(draft.uid, draft.collectionUid, true)).catch(() => null)
+          )
+        );
+        onClose();
+        return;
       }
 
       // Save environment drafts, skipping any with invalid variable names
@@ -176,14 +189,25 @@ const SaveRequestsModal = ({ onClose, forceCloseTabs = false, tabUidsToClose = [
         const invalidNames = getInvalidVariableNames(draft.variables);
         if (invalidNames.length > 0) {
           hasSkippedEnvs = true;
-          toast.error(`Cannot save "${draft.name}": invalid variable name(s) — ${invalidNames.join(', ')}`);
+          toast.error(`Cannot save environment "${draft.name}": invalid variable name(s) — ${invalidNames.join(', ')}`);
           continue;
         }
 
-        if (draft.type === 'collection-environment') {
-          await dispatch(saveEnvironment(draft.variables, draft.environmentUid, draft.collectionUid));
-        } else {
-          await dispatch(saveGlobalEnvironment({ variables: draft.variables, environmentUid: draft.environmentUid }));
+        // Each draft is saved on its own: a rejection here must not abort the drafts queued behind
+        // it, and must not carry past the loop and skip the close/quit below.
+        try {
+          if (draft.type === 'collection-environment') {
+            await dispatch(saveEnvironment(draft.variables, draft.environmentUid, draft.collectionUid));
+          } else {
+            await dispatch(saveGlobalEnvironment({ variables: draft.variables, environmentUid: draft.environmentUid }));
+          }
+        } catch (err) {
+          hasSkippedEnvs = true;
+          toast.error(
+            isEnvironmentValidationError(err)
+              ? `Cannot save environment "${draft.name}": ${err.message}`
+              : `Failed to save environment "${draft.name}"`
+          );
         }
       }
 

@@ -4,9 +4,11 @@ import { IconCheck, IconSun, IconMoon, IconDeviceDesktop } from '@tabler/icons';
 import ToolHint from 'components/ToolHint';
 import { useTheme } from 'providers/Theme';
 import { getLightThemes, getDarkThemes } from 'themes/index';
+import ColorPicker from 'components/ColorPicker';
 import StyledWrapper from './StyledWrapper';
 
 // Constants
+const DEFAULT_ACCENT_COLOR = '#546de5';
 const MODES = ['light', 'dark', 'system'];
 const MODE_BUTTONS = [
   { mode: 'light', icon: IconSun, title: 'Light' },
@@ -38,8 +40,18 @@ const ThemeDropdown = ({ children }) => {
     themeVariantLight,
     themeVariantDark,
     setThemeVariantLight,
-    setThemeVariantDark
+    setThemeVariantDark,
+    customAccentColorLight = DEFAULT_ACCENT_COLOR,
+    setCustomAccentColorLight,
+    customAccentColorDark = DEFAULT_ACCENT_COLOR,
+    setCustomAccentColorDark
   } = useTheme();
+
+  const isDisplayingDark = displayedTheme === 'dark';
+  const handleAccentChange = (color) =>
+    (isDisplayingDark ? setCustomAccentColorDark : setCustomAccentColorLight)(color);
+  const handleAccentReset = () =>
+    (isDisplayingDark ? setCustomAccentColorDark : setCustomAccentColorLight)(DEFAULT_ACCENT_COLOR);
 
   // Theme data
   const lightThemes = getLightThemes();
@@ -284,6 +296,17 @@ const ThemeDropdown = ({ children }) => {
             && renderThemeList(lightThemes, true, themeVariantLight, 'Light theme')}
           {(storedTheme === 'dark' || isSystemMode)
             && renderThemeList(darkThemes, false, themeVariantDark, 'Dark theme')}
+        </div>
+
+        {/* The accent is stored per light/dark theme, so this edits whichever one is
+            currently on screen - in system mode that follows the OS setting. */}
+        <div className="accent-section">
+          <ColorPicker
+            label={`${isDisplayingDark ? 'Dark' : 'Light'} accent color`}
+            value={isDisplayingDark ? customAccentColorDark : customAccentColorLight}
+            onChange={handleAccentChange}
+            onReset={handleAccentReset}
+          />
         </div>
       </div>
     </StyledWrapper>

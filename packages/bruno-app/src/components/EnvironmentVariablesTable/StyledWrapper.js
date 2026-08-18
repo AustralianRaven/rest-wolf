@@ -32,11 +32,17 @@ const Wrapper = styled.div`
         width: 25px;
         border-right: none;
       }
+
       &:nth-child(4) {
         width: 80px;
       }
+      
       &:nth-child(5) {
-        width: 60px;
+        width: 10%;
+      }
+      
+      &:nth-child(6) {
+        width: 5%;
       }
 
       &:nth-child(2) {
@@ -58,6 +64,10 @@ const Wrapper = styled.div`
 
         &:last-child {
           border-right: none;
+        }
+
+        &.sortable-header {
+          cursor: pointer;
         }
 
         .resize-handle {
@@ -182,34 +192,33 @@ const Wrapper = styled.div`
     }
   }
 
-  .vault-secret-row {
+  .drag-handle {
+    opacity: 0;
+    transition: opacity 0.1s ease;
     display: flex;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
+
+    .icon-grip,
+    .icon-minus {
+      color: ${(props) => props.theme.colors.text.muted};
+    }
   }
 
-  .vault-secret-label {
-    font-size: ${(props) => props.theme.font.size.sm};
-    color: ${(props) => props.theme.text};
-    white-space: nowrap;
-    user-select: none;
+  tbody tr:hover .drag-handle,
+  tbody tr.drag-over .drag-handle {
+    opacity: 1;
   }
 
-  input[type='text'].vault-secret-input {
-    width: 180px;
-    padding: 0.375rem 0.75rem;
-    height: auto;
-    border: 1px solid ${(props) => props.theme.button2.color.primary.bg};
-    border-radius: ${(props) => props.theme.border.radius.base};
-    background-color: transparent;
-    color: ${(props) => props.theme.text};
-    font-size: ${(props) => props.theme.font.size.sm};
-    outline: none;
-    transition: all 0.15s ease;
+  tbody tr.dragging-source {
+    opacity: 0.4;
+  }
 
-    &:focus {
-      border-color: ${(props) => props.theme.button2.color.primary.bg};
-      outline: none;
+  .column-sort-header .action-icon {
+    opacity: 0.7;
+
+    &:hover {
+      opacity: 1;
     }
   }
 `;

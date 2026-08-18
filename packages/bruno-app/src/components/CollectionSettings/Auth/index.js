@@ -8,6 +8,7 @@ import BasicAuth from './BasicAuth';
 import DigestAuth from './DigestAuth';
 import WsseAuth from './WsseAuth';
 import ApiKeyAuth from './ApiKeyAuth/';
+import EdgeGridAuth from './EdgeGridAuth';
 import { saveCollectionSettings } from 'providers/ReduxStore/slices/collections/actions';
 import StyledWrapper from './StyledWrapper';
 import OAuth2 from './OAuth2';
@@ -104,6 +105,9 @@ const Auth = ({ collection, authModeContext = false, environmentAuthContext = fa
             Inheriting from environment <span className="font-medium">{activeEnv.name}</span>: {humanizeRequestAuthMode(envAuth.mode)}
           </div>
         );
+      }
+      case 'akamai-edgegrid': {
+        return <EdgeGridAuth collection={collection} />;
       }
     }
   };

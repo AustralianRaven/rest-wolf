@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { updateTabState } from 'providers/ReduxStore/slices/tabs';
 import CreateEnvironment from 'components/Environments/EnvironmentSettings/CreateEnvironment';
 import EnvironmentList from './EnvironmentList';
 import StyledWrapper from './StyledWrapper';
@@ -24,13 +26,28 @@ const DefaultTab = ({ setTab }) => (
 );
 
 const EnvironmentSettings = ({ collection }) => {
+  const dispatch = useDispatch();
   const [isModified, setIsModified] = useState(false);
   const environments = collection?.environments || [];
 
-  const [selectedEnvironment, setSelectedEnvironment] = useState(() => {
+  const activeTabUid = useSelector((state) => state.tabs.activeTabUid);
+  const persistedEnvUid = useSelector((state) => state.tabs.tabs.find((t) => t.uid === activeTabUid)?.tabState?.envUid);
+
+  // Remember which environment the user last viewed in this tab (via tabState) so navigating away and back preserves it.
+  const selectedEnvironment = useMemo(() => {
     if (!environments.length) return null;
-    return environments.find((env) => env.uid === collection?.activeEnvironmentUid) || environments[0];
-  });
+    return (
+      environments.find((env) => env.uid === persistedEnvUid)
+      || environments.find((env) => env.uid === collection?.activeEnvironmentUid)
+      || environments[0]
+    );
+  }, [environments, persistedEnvUid, collection?.activeEnvironmentUid]);
+
+  const setSelectedEnvironment = (env) => {
+    if (!activeTabUid || !env?.uid) return;
+    dispatch(updateTabState({ uid: activeTabUid, tabState: { envUid: env.uid } }));
+  };
+
   const [tab, setTab] = useState('default');
   const [topTab, setTopTab] = useState('environments');
   const [showExportModal, setShowExportModal] = useState(false);

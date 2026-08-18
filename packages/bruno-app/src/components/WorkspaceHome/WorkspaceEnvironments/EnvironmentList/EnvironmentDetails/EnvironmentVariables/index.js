@@ -1,5 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import { IconDownload } from '@tabler/icons';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import cloneDeep from 'lodash/cloneDeep';
 import { useDispatch, useSelector } from 'react-redux';
 import {
@@ -8,56 +7,51 @@ import {
   clearGlobalEnvironmentDraft
 } from 'providers/ReduxStore/slices/global-environments';
 import EnvironmentVariablesTable from 'components/EnvironmentVariablesTable';
-import toast from 'react-hot-toast';
+import VaultSecrets, {
+  VAULT_SECRETS_VAR,
+  LEGACY_VAULT_SECRET_VAR,
+  readSecretRefs,
+  serializeSecretRefs
+} from 'components/Environments/VaultSecrets';
 import { uuid } from 'utils/common';
-import Button from 'ui/Button';
 
-const EnvironmentVariables = ({ environment, setIsModified, collection, searchQuery = '' }) => {
+// Config rows the vault panel owns; they are kept out of the editable table.
+const CONFIG_VARS = [VAULT_SECRETS_VAR, LEGACY_VAULT_SECRET_VAR];
+
+const EnvironmentVariables = ({ environment, setIsModified, collection, searchQuery = '', variableType = 'variables' }) => {
   const dispatch = useDispatch();
   const { globalEnvironmentDraft } = useSelector((state) => state.globalEnvironments);
-  const preferences = useSelector((state) => state.app.preferences);
 
-  const [isFetchingFromVault, setIsFetchingFromVault] = useState(false);
-  const [vaultSecretName, setVaultSecretName] = useState(
-    () => (environment.variables || []).find((v) => v.name === 'VAULT_SECRET')?.value || ''
-  );
+  const savedRefs = useMemo(() => readSecretRefs(environment), [environment]);
+  const [secretRefs, setSecretRefs] = useState(savedRefs);
 
-  // Reset vault secret name when switching environments
   const prevEnvUidRef = useRef(environment.uid);
   useEffect(() => {
     if (prevEnvUidRef.current !== environment.uid) {
       prevEnvUidRef.current = environment.uid;
-      setVaultSecretName(
-        (environment.variables || []).find((v) => v.name === 'VAULT_SECRET')?.value || ''
-      );
+      setSecretRefs(savedRefs);
     }
-  }, [environment.uid, environment.variables]);
+  }, [environment.uid, savedRefs]);
 
   const hasDraftForThisEnv = globalEnvironmentDraft?.environmentUid === environment.uid;
 
-  // Filter VAULT_SECRET from the environment passed to the table so it
-  // doesn't appear as a regular editable row.
   const filteredEnvironment = useMemo(() => ({
     ...environment,
-    variables: (environment.variables || []).filter((v) => v.name !== 'VAULT_SECRET')
+    variables: (environment.variables || []).filter((v) => !CONFIG_VARS.includes(v.name))
   }), [environment]);
 
-  const savedVaultSecret = useMemo(
-    () => (environment.variables || []).find((v) => v.name === 'VAULT_SECRET')?.value || '',
-    [environment.variables]
-  );
-
-  const vaultHasChanges = vaultSecretName.trim() !== savedVaultSecret;
+  const serializedRefs = useMemo(() => serializeSecretRefs(secretRefs), [secretRefs]);
+  const vaultHasChanges = serializedRefs !== serializeSecretRefs(savedRefs);
 
   const handleSave = useCallback(
     (variables) => {
-      const variablesToSave = cloneDeep(variables);
-      if (vaultSecretName.trim()) {
-        const existingVaultVar = (environment.variables || []).find((v) => v.name === 'VAULT_SECRET');
+      const variablesToSave = cloneDeep(variables).filter((v) => !CONFIG_VARS.includes(v.name));
+      if (serializedRefs) {
+        const existing = (environment.variables || []).find((v) => v.name === VAULT_SECRETS_VAR);
         variablesToSave.push({
-          uid: existingVaultVar?.uid || uuid(),
-          name: 'VAULT_SECRET',
-          value: vaultSecretName.trim(),
+          uid: existing?.uid || uuid(),
+          name: VAULT_SECRETS_VAR,
+          value: serializedRefs,
           type: 'text',
           secret: false,
           enabled: true
@@ -65,7 +59,7 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
       }
       return dispatch(saveGlobalEnvironment({ environmentUid: environment.uid, variables: variablesToSave }));
     },
-    [dispatch, environment.uid, environment.variables, vaultSecretName]
+    [dispatch, environment.uid, environment.variables, serializedRefs]
   );
 
   const handleSetIsModified = useCallback(
@@ -77,12 +71,7 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
 
   const handleDraftChange = useCallback(
     (variables) => {
-      dispatch(
-        setGlobalEnvironmentDraft({
-          environmentUid: environment.uid,
-          variables
-        })
-      );
+      dispatch(setGlobalEnvironmentDraft({ environmentUid: environment.uid, variables }));
     },
     [dispatch, environment.uid]
   );
@@ -91,85 +80,45 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
     dispatch(clearGlobalEnvironmentDraft());
   }, [dispatch]);
 
-  const handleFetchFromVault = async () => {
-    if (!preferences.azureVault?.enabled) {
-      toast.error('Azure Key Vault is not configured. Please check your preferences.');
-      return;
-    }
-    if (!vaultSecretName.trim()) {
-      toast.error('Please enter a Vault Secret name before fetching.');
-      return;
-    }
-    setIsFetchingFromVault(true);
-    try {
-      const result = await window.ipcRenderer.invoke('azure-vault:fetch-secrets', {
-        vaultSecret: vaultSecretName.trim()
-      });
-      if (result.success && result.secrets) {
-        // Fire a custom event so EnvironmentVariablesTable can merge the fetched secrets.
-        // We pass the secrets via the event so the table can update its formik state.
-        window.dispatchEvent(new CustomEvent('vault-secrets-fetched', { detail: result.secrets }));
-        const secretCount = Object.keys(result.secrets).length;
-        toast.success(`Successfully fetched ${secretCount} secrets from Azure Key Vault`);
-      } else {
-        toast.error(result.error || 'Failed to fetch secrets from Azure Key Vault');
-      }
-    } catch (error) {
-      toast.error(`Failed to fetch from vault: ${error.message}`);
-    } finally {
-      setIsFetchingFromVault(false);
-    }
-  };
+  // The table owns the editable rows, so resolved values are handed to it through the same
+  // event the fetch flow has always used rather than being written behind its back.
+  const handleApply = useCallback((merged) => {
+    window.dispatchEvent(new CustomEvent('vault-secrets-fetched', { detail: merged }));
+  }, []);
 
-  const renderVaultUI = useCallback(() => {
-    if (!preferences.azureVault?.enabled) return null;
+  // Removes the rows from the table only; the environment still has to be saved, so a
+  // mis-click is undone by Reset.
+  const handleClear = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('vault-secrets-cleared'));
+  }, []);
+
+  const renderVaultPanel = useCallback(() => {
+    if (variableType !== 'secrets') return null;
     return (
-      <div className="vault-secret-row ml-2">
-        <label className="vault-secret-label" htmlFor="vault-secret-input">
-          Vault Secret
-        </label>
-        <input
-          id="vault-secret-input"
-          type="text"
-          className="vault-secret-input mousetrap"
-          placeholder="Secret name"
-          value={vaultSecretName}
-          onChange={(e) => setVaultSecretName(e.target.value)}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          spellCheck="false"
-        />
-        <Button
-          type="button"
-          size="sm"
-          color="primary"
-          variant="outline"
-          onClick={handleFetchFromVault}
-          disabled={isFetchingFromVault}
-          data-testid="fetch-from-vault"
-        >
-          <IconDownload size={14} strokeWidth={1.5} className="mr-1" />
-          {isFetchingFromVault ? 'Fetching...' : 'Fetch from Vault'}
-        </Button>
-      </div>
+      <VaultSecrets refs={secretRefs} onRefsChange={setSecretRefs} onApply={handleApply} onClear={handleClear} />
     );
-  }, [preferences.azureVault?.enabled, vaultSecretName, isFetchingFromVault, handleFetchFromVault]);
+  }, [variableType, secretRefs, handleApply, handleClear]);
 
+  // The vault panel and the table are siblings in a scrolling column: the surrounding
+  // layout does not scroll, so an unbounded panel would push the table's Save button out
+  // of reach.
   return (
-    <EnvironmentVariablesTable
-      key={environment?.uid}
-      environment={filteredEnvironment}
-      collection={collection}
-      onSave={handleSave}
-      draft={hasDraftForThisEnv ? globalEnvironmentDraft : null}
-      onDraftChange={handleDraftChange}
-      onDraftClear={handleDraftClear}
-      setIsModified={handleSetIsModified}
-      forceHasChanges={vaultHasChanges}
-      renderExtraButtonContent={renderVaultUI}
-      searchQuery={searchQuery}
-    />
+    <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
+      {renderVaultPanel()}
+      <EnvironmentVariablesTable
+        key={environment?.uid}
+        environment={filteredEnvironment}
+        collection={collection}
+        onSave={handleSave}
+        draft={hasDraftForThisEnv ? globalEnvironmentDraft : null}
+        onDraftChange={handleDraftChange}
+        onDraftClear={handleDraftClear}
+        setIsModified={handleSetIsModified}
+        forceHasChanges={vaultHasChanges}
+        searchQuery={searchQuery}
+        variableType={variableType}
+      />
+    </div>
   );
 };
 
