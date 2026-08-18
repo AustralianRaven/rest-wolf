@@ -10,7 +10,8 @@ import EnvironmentVariablesTable from 'components/EnvironmentVariablesTable';
 import VaultSecrets, {
   VAULT_SECRETS_VAR,
   LEGACY_VAULT_SECRET_VAR,
-  readSecretNames
+  readSecretRefs,
+  serializeSecretRefs
 } from 'components/Environments/VaultSecrets';
 import { uuid } from 'utils/common';
 
@@ -21,16 +22,16 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
   const dispatch = useDispatch();
   const { globalEnvironmentDraft } = useSelector((state) => state.globalEnvironments);
 
-  const savedSecretNames = useMemo(() => readSecretNames(environment), [environment]);
-  const [secretNames, setSecretNames] = useState(savedSecretNames);
+  const savedRefs = useMemo(() => readSecretRefs(environment), [environment]);
+  const [secretRefs, setSecretRefs] = useState(savedRefs);
 
   const prevEnvUidRef = useRef(environment.uid);
   useEffect(() => {
     if (prevEnvUidRef.current !== environment.uid) {
       prevEnvUidRef.current = environment.uid;
-      setSecretNames(savedSecretNames);
+      setSecretRefs(savedRefs);
     }
-  }, [environment.uid, savedSecretNames]);
+  }, [environment.uid, savedRefs]);
 
   const hasDraftForThisEnv = globalEnvironmentDraft?.environmentUid === environment.uid;
 
@@ -39,18 +40,18 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
     variables: (environment.variables || []).filter((v) => !CONFIG_VARS.includes(v.name))
   }), [environment]);
 
-  const trimmedNames = useMemo(() => secretNames.map((n) => n.trim()).filter(Boolean), [secretNames]);
-  const vaultHasChanges = trimmedNames.join(',') !== savedSecretNames.join(',');
+  const serializedRefs = useMemo(() => serializeSecretRefs(secretRefs), [secretRefs]);
+  const vaultHasChanges = serializedRefs !== serializeSecretRefs(savedRefs);
 
   const handleSave = useCallback(
     (variables) => {
       const variablesToSave = cloneDeep(variables).filter((v) => !CONFIG_VARS.includes(v.name));
-      if (trimmedNames.length) {
+      if (serializedRefs) {
         const existing = (environment.variables || []).find((v) => v.name === VAULT_SECRETS_VAR);
         variablesToSave.push({
           uid: existing?.uid || uuid(),
           name: VAULT_SECRETS_VAR,
-          value: trimmedNames.join(','),
+          value: serializedRefs,
           type: 'text',
           secret: false,
           enabled: true
@@ -58,7 +59,7 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
       }
       return dispatch(saveGlobalEnvironment({ environmentUid: environment.uid, variables: variablesToSave }));
     },
-    [dispatch, environment.uid, environment.variables, trimmedNames]
+    [dispatch, environment.uid, environment.variables, serializedRefs]
   );
 
   const handleSetIsModified = useCallback(
@@ -88,14 +89,9 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
   const renderVaultPanel = useCallback(() => {
     if (variableType !== 'secrets') return null;
     return (
-      <VaultSecrets
-        environment={environment}
-        secretNames={secretNames}
-        onSecretNamesChange={setSecretNames}
-        onApply={handleApply}
-      />
+      <VaultSecrets refs={secretRefs} onRefsChange={setSecretRefs} onApply={handleApply} />
     );
-  }, [variableType, environment, secretNames, handleApply]);
+  }, [variableType, secretRefs, handleApply]);
 
   // The vault panel and the table are siblings in a scrolling column: the surrounding
   // layout does not scroll, so an unbounded panel would push the table's Save button out

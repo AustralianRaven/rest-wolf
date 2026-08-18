@@ -24,37 +24,57 @@ const testSecretManager = async (config) => {
   }
 };
 
-// Resolves an ordered list of secret names against the configured providers. Two orderings
-// are in play: secret names carry the tier precedence (most specific first, so tenant beats
-// cluster beats global), while providers are tried in their configured order to find which
-// vault actually holds a given secret.
-const resolveSecretRefs = async ({ secretNames = [] }) => {
+// Resolves an ordered list of {vaultName, secretName} refs. Two orderings are in play:
+// the refs carry tier precedence (most specific first, so tenant beats cluster beats
+// global), while a ref without a pinned vault falls back to trying each configured
+// provider in order. Providers are pinned by name rather than id so the choice survives
+// being shared with a teammate whose vault has a different local id.
+const resolveSecretRefs = async ({ refs = [] }) => {
   const managers = secretManagerStore.all().map((m) => secretManagerStore.resolve(m.uid));
   const sources = [];
 
-  for (const secretName of secretNames) {
+  for (const ref of refs) {
+    const secretName = (ref.secretName || '').trim();
     if (!secretName) continue;
-    if (!managers.length) {
-      sources.push({ secretName, managerName: null, ok: false, error: 'No secret manager configured', variables: {} });
+
+    // A pinned vault is honoured or reported; falling back to a different vault would
+    // quietly hand back another environment's values under the same key.
+    const candidates = ref.vaultName ? managers.filter((m) => m.name === ref.vaultName) : managers;
+
+    if (!candidates.length) {
+      const error = ref.vaultName
+        ? `Vault '${ref.vaultName}' is not configured`
+        : 'No secret manager configured';
+      sources.push({ secretName, vaultName: ref.vaultName || null, managerName: null, ok: false, error, variables: {} });
       continue;
     }
 
     let resolved = null;
     const attempts = [];
-    for (const manager of managers) {
+    for (const manager of candidates) {
       try {
         const variables = await serviceFor(manager).fetchSecret(secretName);
-        resolved = { secretName, managerName: manager.name, ok: true, error: null, variables: variables || {} };
+        resolved = {
+          secretName,
+          vaultName: ref.vaultName || null,
+          managerName: manager.name,
+          ok: true,
+          error: null,
+          variables: variables || {}
+        };
         break;
       } catch (error) {
         attempts.push(`${manager.name}: ${error.message}`);
       }
     }
 
-    sources.push(resolved || { secretName, managerName: null, ok: false, error: attempts.join('; '), variables: {} });
+    sources.push(
+      resolved
+        || { secretName, vaultName: ref.vaultName || null, managerName: null, ok: false, error: attempts.join('; '), variables: {} }
+    );
   }
 
-  // First provider to define a key keeps it, and what it shadowed is recorded - otherwise a
+  // First ref to define a key keeps it, and what it shadowed is recorded - otherwise a
   // lower tier just looks silently ignored.
   const merged = {};
   const owner = {};

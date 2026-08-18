@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { IconDownload, IconPlus, IconTrash, IconChevronUp, IconChevronDown } from '@tabler/icons';
 import Button from 'ui/Button';
@@ -10,47 +10,64 @@ export const VAULT_SECRETS_VAR = 'VAULT_SECRETS';
 export const LEGACY_VAULT_SECRET_VAR = 'VAULT_SECRET';
 
 // The ordered tier list is stored as one comma-separated environment variable so it travels
-// with the collection in git, the way the previous single-secret setup did.
-export const readSecretNames = (environment) => {
+// with the collection in git, the way the previous single-secret setup did. Each entry is
+// "<vault name>:<secret name>", or a bare secret name when no vault is pinned. Azure secret
+// names cannot contain a colon, so the last colon is the separator.
+const parseRef = (entry) => {
+  const trimmed = entry.trim();
+  const split = trimmed.lastIndexOf(':');
+  if (split === -1) return { vaultName: '', secretName: trimmed };
+  return { vaultName: trimmed.slice(0, split).trim(), secretName: trimmed.slice(split + 1).trim() };
+};
+
+export const readSecretRefs = (environment) => {
   const variables = environment?.variables || [];
   const ordered = variables.find((v) => v.name === VAULT_SECRETS_VAR)?.value;
   if (ordered) {
-    return ordered.split(',').map((s) => s.trim()).filter(Boolean);
+    return ordered.split(',').map(parseRef).filter((ref) => ref.secretName);
   }
   const legacy = variables.find((v) => v.name === LEGACY_VAULT_SECRET_VAR)?.value;
-  return legacy ? [legacy.trim()] : [];
+  return legacy ? [{ vaultName: '', secretName: legacy.trim() }] : [];
 };
 
-const VaultSecrets = ({ environment, secretNames, onSecretNamesChange, onApply, busy }) => {
+export const serializeSecretRefs = (refs) =>
+  refs
+    .filter((ref) => ref.secretName && ref.secretName.trim())
+    .map((ref) => (ref.vaultName ? `${ref.vaultName}:${ref.secretName.trim()}` : ref.secretName.trim()))
+    .join(',');
+
+const VaultSecrets = ({ refs, onRefsChange, onApply, busy }) => {
+  const [managers, setManagers] = useState([]);
   const [resolved, setResolved] = useState(null);
   const [selectedSource, setSelectedSource] = useState('__merged__');
   const [fetching, setFetching] = useState(false);
 
-  const setNames = (next) => onSecretNamesChange(next);
+  useEffect(() => {
+    window.ipcRenderer.invoke('renderer:secret-managers-list').then(setManagers);
+  }, []);
 
-  const updateName = (index, value) => {
-    const next = [...secretNames];
-    next[index] = value;
-    setNames(next);
+  const updateRef = (index, changes) => {
+    const next = refs.map((ref, i) => (i === index ? { ...ref, ...changes } : ref));
+    onRefsChange(next);
   };
 
   const move = (index, delta) => {
     const target = index + delta;
-    if (target < 0 || target >= secretNames.length) return;
-    const next = [...secretNames];
+    if (target < 0 || target >= refs.length) return;
+    const next = [...refs];
     [next[index], next[target]] = [next[target], next[index]];
-    setNames(next);
+    onRefsChange(next);
   };
 
   const fetchSecrets = async () => {
-    const names = secretNames.map((n) => n.trim()).filter(Boolean);
-    if (!names.length) {
+    const usable = refs.filter((ref) => ref.secretName && ref.secretName.trim());
+    if (!usable.length) {
       toast.error('Add at least one secret name first');
       return;
     }
     setFetching(true);
     try {
-      const result = await window.ipcRenderer.invoke('renderer:secret-manager-resolve', { secretNames: names });
+      const result = await window.ipcRenderer.invoke('renderer:secret-manager-resolve', { refs: usable });
       setResolved(result);
       setSelectedSource('__merged__');
       const failed = result.sources.filter((s) => !s.ok);
@@ -106,15 +123,28 @@ const VaultSecrets = ({ environment, secretNames, onSecretNamesChange, onApply, 
         )}
       </div>
 
-      {secretNames.map((name, index) => (
+      {refs.map((ref, index) => (
         <div className="tier-row" key={index}>
           <span className="tier-rank">{index + 1}</span>
+          <select
+            className="tier-vault"
+            value={ref.vaultName || ''}
+            onChange={(e) => updateRef(index, { vaultName: e.target.value })}
+            data-testid="vault-secret-provider"
+          >
+            <option value="">Any vault</option>
+            {managers.map((manager) => (
+              <option key={manager.uid} value={manager.name}>
+                {manager.name}
+              </option>
+            ))}
+          </select>
           <input
             className="tier-input mousetrap"
             type="text"
             placeholder="Secret name, e.g. devau--qa-a-sa"
-            value={name}
-            onChange={(e) => updateName(index, e.target.value)}
+            value={ref.secretName}
+            onChange={(e) => updateRef(index, { secretName: e.target.value })}
             autoComplete="off"
             spellCheck="false"
           />
@@ -124,7 +154,7 @@ const VaultSecrets = ({ environment, secretNames, onSecretNamesChange, onApply, 
           <ActionIcon label="Move down" size="xs" onClick={() => move(index, 1)}>
             <IconChevronDown size={14} strokeWidth={1.5} />
           </ActionIcon>
-          <ActionIcon label="Remove" size="xs" colorOnHover="danger" onClick={() => setNames(secretNames.filter((_, i) => i !== index))}>
+          <ActionIcon label="Remove" size="xs" colorOnHover="danger" onClick={() => onRefsChange(refs.filter((_, i) => i !== index))}>
             <IconTrash size={14} strokeWidth={1.5} />
           </ActionIcon>
         </div>
@@ -132,7 +162,7 @@ const VaultSecrets = ({ environment, secretNames, onSecretNamesChange, onApply, 
 
       <div className="tier-row">
         <span className="tier-rank" />
-        <Button size="sm" color="secondary" variant="ghost" onClick={() => setNames([...secretNames, ''])}>
+        <Button size="sm" color="secondary" variant="ghost" onClick={() => onRefsChange([...refs, { vaultName: '', secretName: '' }])}>
           <IconPlus size={14} strokeWidth={1.5} className="mr-1" />
           Add secret
         </Button>
@@ -157,6 +187,7 @@ const VaultSecrets = ({ environment, secretNames, onSecretNamesChange, onApply, 
                 <option key={source.secretName} value={source.secretName}>
                   {source.secretName} ({Object.keys(source.variables).length})
                   {source.managerName ? ` · ${source.managerName}` : ''}
+                  {!source.ok ? ' · failed' : ''}
                 </option>
               ))}
             </select>

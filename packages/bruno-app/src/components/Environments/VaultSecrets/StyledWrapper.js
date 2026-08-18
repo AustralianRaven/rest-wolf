@@ -38,6 +38,17 @@ const StyledWrapper = styled.div`
     color: ${(props) => props.theme.colors.text.muted};
   }
 
+  select.tier-vault {
+    flex-shrink: 0;
+    max-width: 11rem;
+    padding: 5px 8px;
+    border: 1px solid ${(props) => props.theme.border.border1};
+    border-radius: ${(props) => props.theme.border.radius.base};
+    background-color: transparent;
+    color: ${(props) => props.theme.text};
+    font-size: ${(props) => props.theme.font.size.sm};
+  }
+
   input.tier-input {
     flex: 1;
     padding: 5px 8px;
