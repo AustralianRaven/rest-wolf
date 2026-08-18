@@ -60,7 +60,7 @@ const { globalEnvironmentsManager } = require('./store/workspace-environments');
 const registerNotificationsIpc = require('./ipc/notifications');
 const registerGlobalEnvironmentsIpc = require('./ipc/global-environments');
 const registerAuthModesIpc = require('./ipc/auth-modes');
-const { registerAzureVaultIpc } = require('./ipc/azure-vault');
+const registerSecretManagerIpc = require('./ipc/secret-managers');
 const TerminalManager = require('./ipc/terminal');
 const { safeParseJSON, safeStringifyJSON } = require('./utils/common');
 const { getDomainsWithCookies } = require('./utils/cookies');
@@ -525,7 +525,7 @@ app.on('ready', async () => {
   registerNetworkIpc(mainWindow);
   registerGlobalEnvironmentsIpc(mainWindow, globalEnvironmentsManager);
   registerAuthModesIpc(mainWindow);
-  registerAzureVaultIpc(mainWindow);
+  registerSecretManagerIpc();
   registerCollectionsIpc(mainWindow, collectionWatcher);
   registerYmlMigrationIpc(mainWindow, collectionWatcher);
   registerPreferencesIpc(mainWindow, collectionWatcher);

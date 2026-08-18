@@ -861,7 +861,9 @@ const EnvironmentVariablesTable = ({
       const updated = [...formikValuesRef.current];
       Object.entries(secrets).forEach(([secretName, secretValue]) => {
         const existingIndex = updated.findIndex((v) => v.name === secretName);
-        const isSecretVar = /password|secret|key/i.test(secretName);
+        // Everything arriving from a vault is treated as a secret rather than guessed at
+        // by name, so it lands on the Secrets tab and is masked.
+        const isSecretVar = true;
         if (existingIndex === -1) {
           const emptyRowIndex = updated.length - 1;
           updated.splice(emptyRowIndex, 0, {

@@ -61,13 +61,6 @@ const General = ({ close }) => {
     oauth2: Yup.object({
       useSystemBrowser: Yup.boolean()
     }),
-    azureVault: Yup.object({
-      enabled: Yup.boolean(),
-      tenantId: Yup.string(),
-      clientId: Yup.string(),
-      clientSecret: Yup.string(),
-      vaultUrl: Yup.string().url('Must be a valid URL')
-    }),
     defaultCollectionLocation: Yup.string().max(1024)
   });
 
@@ -90,13 +83,6 @@ const General = ({ close }) => {
       },
       oauth2: {
         useSystemBrowser: get(preferences, 'request.oauth2.useSystemBrowser', false)
-      },
-      azureVault: {
-        enabled: get(preferences, 'azureVault.enabled', false),
-        tenantId: get(preferences, 'azureVault.tenantId', ''),
-        clientId: get(preferences, 'azureVault.clientId', ''),
-        clientSecret: get(preferences, 'azureVault.clientSecret', ''),
-        vaultUrl: get(preferences, 'azureVault.vaultUrl', '')
       },
       defaultCollectionLocation: get(preferences, 'general.defaultCollectionLocation', '')
     },
@@ -135,13 +121,6 @@ const General = ({ close }) => {
         autoSave: {
           enabled: newPreferences.autoSave.enabled,
           interval: newPreferences.autoSave.interval
-        },
-        azureVault: {
-          enabled: newPreferences.azureVault.enabled,
-          tenantId: newPreferences.azureVault.tenantId,
-          clientId: newPreferences.azureVault.clientId,
-          clientSecret: newPreferences.azureVault.clientSecret,
-          vaultUrl: newPreferences.azureVault.vaultUrl
         },
         general: {
           defaultCollectionLocation: newPreferences.defaultCollectionLocation
@@ -379,64 +358,6 @@ const General = ({ close }) => {
         )}
         {formik.touched.autoSave?.interval && formik.errors.autoSave?.interval && (
           <div className="text-red-500">{formik.errors.autoSave.interval}</div>
-        )}
-
-        <div className="flex items-center mt-6">
-          <input
-            id="azureVaultEnabled"
-            type="checkbox"
-            name="azureVault.enabled"
-            className="mr-2 cursor-pointer"
-            onChange={formik.handleChange}
-            checked={formik.values.azureVault.enabled}
-          />
-          <label className="block ml-2 select-none" htmlFor="azureVaultEnabled">
-            Enable Azure Key Vault Integration
-          </label>
-        </div>
-
-        {formik.values.azureVault.enabled && (
-          <div className="flex flex-col mt-4 pl-6 space-y-4">
-            <SettingsInput
-              id="azureVaultTenantId"
-              label="Tenant ID"
-              value={formik.values.azureVault.tenantId}
-              onChange={(e) => formik.setFieldValue('azureVault.tenantId', e.target.value)}
-              description="Azure Active Directory tenant ID"
-              className="w-64"
-              secret
-            />
-            <SettingsInput
-              id="azureVaultClientId"
-              label="Client ID"
-              value={formik.values.azureVault.clientId}
-              onChange={(e) => formik.setFieldValue('azureVault.clientId', e.target.value)}
-              description="Azure application client ID"
-              className="w-64"
-              secret
-            />
-            <SettingsInput
-              id="azureVaultClientSecret"
-              label="Client Secret"
-              value={formik.values.azureVault.clientSecret}
-              onChange={(e) => formik.setFieldValue('azureVault.clientSecret', e.target.value)}
-              description="Azure application client secret"
-              className="w-64"
-              secret
-            />
-            <SettingsInput
-              id="azureVaultUrl"
-              label="Vault URL"
-              value={formik.values.azureVault.vaultUrl}
-              onChange={(e) => formik.setFieldValue('azureVault.vaultUrl', e.target.value)}
-              description="Azure Key Vault URL (e.g., https://myvault.vault.azure.net/)"
-              className="w-96"
-            />
-          </div>
-        )}
-
-        {formik.touched.azureVault?.vaultUrl && formik.errors.azureVault?.vaultUrl && (
-          <div className="text-red-500">{formik.errors.azureVault.vaultUrl}</div>
         )}
 
         <div className="flex flex-col mt-6">
