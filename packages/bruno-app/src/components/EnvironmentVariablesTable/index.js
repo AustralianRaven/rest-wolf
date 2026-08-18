@@ -655,9 +655,9 @@ const EnvironmentVariablesTable = ({
     const otherCurrent = namedValues.filter((variable) => !belongsToActiveTab(variable));
     const otherSaved = savedValues.filter((variable) => !belongsToActiveTab(variable));
 
-    const hasChanges =
-      forceHasChanges ||
-      JSON.stringify(activeCurrent.map(stripEnvVarUid)) !== JSON.stringify(activeSaved.map(stripEnvVarUid));
+    const hasChanges
+      = forceHasChanges
+        || JSON.stringify(activeCurrent.map(stripEnvVarUid)) !== JSON.stringify(activeSaved.map(stripEnvVarUid));
     if (!hasChanges) {
       toast.error('No changes to save');
       return;

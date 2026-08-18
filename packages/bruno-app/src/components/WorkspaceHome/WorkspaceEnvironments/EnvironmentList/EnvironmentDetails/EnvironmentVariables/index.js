@@ -97,21 +97,26 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
     );
   }, [variableType, environment, secretNames, handleApply]);
 
+  // The vault panel and the table are siblings in a scrolling column: the surrounding
+  // layout does not scroll, so an unbounded panel would push the table's Save button out
+  // of reach.
   return (
-    <EnvironmentVariablesTable
-      key={environment?.uid}
-      environment={filteredEnvironment}
-      collection={collection}
-      onSave={handleSave}
-      draft={hasDraftForThisEnv ? globalEnvironmentDraft : null}
-      onDraftChange={handleDraftChange}
-      onDraftClear={handleDraftClear}
-      setIsModified={handleSetIsModified}
-      forceHasChanges={vaultHasChanges}
-      renderExtraButtonContent={renderVaultPanel}
-      searchQuery={searchQuery}
-      variableType={variableType}
-    />
+    <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
+      {renderVaultPanel()}
+      <EnvironmentVariablesTable
+        key={environment?.uid}
+        environment={filteredEnvironment}
+        collection={collection}
+        onSave={handleSave}
+        draft={hasDraftForThisEnv ? globalEnvironmentDraft : null}
+        onDraftChange={handleDraftChange}
+        onDraftClear={handleDraftClear}
+        setIsModified={handleSetIsModified}
+        forceHasChanges={vaultHasChanges}
+        searchQuery={searchQuery}
+        variableType={variableType}
+      />
+    </div>
   );
 };
 

@@ -5,8 +5,14 @@ const StyledWrapper = styled.div`
   border-radius: ${(props) => props.theme.border.radius.base};
   padding: 10px 12px;
   margin-bottom: 10px;
+  flex-shrink: 0;
 
   .vault-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: ${(props) => props.theme.bg};
+    padding-bottom: 6px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -69,9 +75,16 @@ const StyledWrapper = styled.div`
     font-size: ${(props) => props.theme.font.size.sm};
   }
 
+  /* A resolved tier can carry hundreds of keys; capping the table keeps the variables
+     table below it reachable without a long scroll. */
+  .resolved-scroll {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-top: 8px;
+  }
+
   table.resolved {
     width: 100%;
-    margin-top: 8px;
     border-collapse: collapse;
     font-size: ${(props) => props.theme.font.size.sm};
 

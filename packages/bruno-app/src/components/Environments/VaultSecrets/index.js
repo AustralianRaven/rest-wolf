@@ -167,24 +167,26 @@ const VaultSecrets = ({ environment, secretNames, onSecretNamesChange, onApply, 
 
           {activeSource && !activeSource.ok && <div className="source-error">{activeSource.error}</div>}
 
-          <table className="resolved">
-            <thead>
-              <tr>
-                <th>Key</th>
-                <th>Value</th>
-                <th>From</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.key} className={row.shadowed ? 'shadowed' : ''}>
-                  <td>{row.key}</td>
-                  <td>{String(row.value)}</td>
-                  <td className="from">{row.shadowed ? `overridden by ${resolved.owner[row.key]}` : row.from}</td>
+          <div className="resolved-scroll">
+            <table className="resolved">
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th>Value</th>
+                  <th>From</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.key} className={row.shadowed ? 'shadowed' : ''}>
+                    <td>{row.key}</td>
+                    <td>{String(row.value)}</td>
+                    <td className="from">{row.shadowed ? `overridden by ${resolved.owner[row.key]}` : row.from}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </StyledWrapper>
