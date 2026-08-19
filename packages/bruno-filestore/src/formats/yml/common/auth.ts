@@ -27,6 +27,13 @@ interface AkamaiEdgeGridAuthValues {
   maxBodySize?: number | null;
 }
 
+// 'named' points a request at a saved auth mode by uid. OpenCollection has no such
+// concept, so the on-disk shape is defined here.
+interface NamedAuthValues {
+  type: 'named';
+  uid?: string;
+}
+
 const buildAwsV4Auth = (config?: BrunoAuth['awsv4']): AuthAwsV4 => {
   const auth: AuthAwsV4 = { type: 'awsv4' };
 
@@ -187,6 +194,17 @@ export const toOpenCollectionAuth = (auth?: BrunoAuth | null): Auth | undefined 
     return 'inherit';
   }
 
+  // 'inherit-environment' and 'named' are Bruno-specific modes with no OpenCollection
+  // equivalent. They are serialized in Bruno's own shape and cast, the same way EdgeGrid is,
+  // so a .yml collection keeps the mode instead of falling back to 'none' on the next read.
+  if (auth.mode === 'inherit-environment') {
+    return 'inherit-environment' as unknown as Auth;
+  }
+
+  if (auth.mode === 'named') {
+    return { type: 'named', uid: auth.namedAuthModeUid || '' } as unknown as Auth;
+  }
+
   switch (auth.mode) {
     case 'awsv4':
       return buildAwsV4Auth(auth.awsv4);
@@ -234,6 +252,17 @@ export const toBrunoAuth = (auth: Auth | null | undefined): BrunoAuth | null => 
 
   if (auth === 'inherit') {
     brunoAuth.mode = 'inherit';
+    return brunoAuth;
+  }
+
+  if ((auth as unknown as string) === 'inherit-environment') {
+    brunoAuth.mode = 'inherit-environment';
+    return brunoAuth;
+  }
+
+  if ((auth as unknown as NamedAuthValues).type === 'named') {
+    brunoAuth.mode = 'named';
+    brunoAuth.namedAuthModeUid = (auth as unknown as NamedAuthValues).uid || '';
     return brunoAuth;
   }
 

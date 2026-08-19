@@ -112,6 +112,8 @@ export interface OAuth2 {
 
 export type AuthMode
   = | 'inherit'
+    | 'inherit-environment'
+    | 'named'
     | 'none'
     | 'awsv4'
     | 'basic'
@@ -126,6 +128,8 @@ export type AuthMode
 
 export interface Auth {
   mode: AuthMode;
+  /** Set when mode is 'named'; points at a saved auth mode by uid. */
+  namedAuthModeUid?: string | null;
   awsv4?: AuthAwsV4 | null;
   basic?: AuthBasic | null;
   bearer?: AuthBearer | null;
