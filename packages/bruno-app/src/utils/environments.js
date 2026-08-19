@@ -2,6 +2,13 @@ import { isEqual } from 'lodash';
 import { uuid } from './common/index';
 import { INVALID_VARIABLE_NAMES_ERROR_PREFIX } from './common/variables';
 
+// Vault wiring is stored as ordinary environment variables so it travels with the collection
+// in git. They are configuration, not user-editable rows, so every environment UI hides them.
+export const VAULT_SECRETS_VAR = 'VAULT_SECRETS';
+// The single-secret variable this replaced; still read so existing environments keep working.
+export const LEGACY_VAULT_SECRET_VAR = 'VAULT_SECRET';
+export const VAULT_CONFIG_VARS = [VAULT_SECRETS_VAR, LEGACY_VAULT_SECRET_VAR];
+
 export const buildEnvVariable = ({ envVariable: obj, withUuid = false }) => {
   const isSecret = !!obj.secret;
   const envVariable = {

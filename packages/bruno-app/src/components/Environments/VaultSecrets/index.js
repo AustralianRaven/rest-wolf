@@ -3,11 +3,10 @@ import toast from 'react-hot-toast';
 import { IconDownload, IconPlus, IconTrash, IconChevronUp, IconChevronDown } from '@tabler/icons';
 import Button from 'ui/Button';
 import ActionIcon from 'ui/ActionIcon';
+import { VAULT_SECRETS_VAR, LEGACY_VAULT_SECRET_VAR } from 'utils/environments';
 import StyledWrapper from './StyledWrapper';
 
-export const VAULT_SECRETS_VAR = 'VAULT_SECRETS';
-// The single-secret variable this replaced; still read so existing environments keep working.
-export const LEGACY_VAULT_SECRET_VAR = 'VAULT_SECRET';
+export { VAULT_SECRETS_VAR, LEGACY_VAULT_SECRET_VAR };
 
 // The ordered tier list is stored as one comma-separated environment variable so it travels
 // with the collection in git, the way the previous single-secret setup did. Each entry is

@@ -7,16 +7,9 @@ import {
   clearGlobalEnvironmentDraft
 } from 'providers/ReduxStore/slices/global-environments';
 import EnvironmentVariablesTable from 'components/EnvironmentVariablesTable';
-import VaultSecrets, {
-  VAULT_SECRETS_VAR,
-  LEGACY_VAULT_SECRET_VAR,
-  readSecretRefs,
-  serializeSecretRefs
-} from 'components/Environments/VaultSecrets';
+import VaultSecrets, { readSecretRefs, serializeSecretRefs } from 'components/Environments/VaultSecrets';
 import { uuid } from 'utils/common';
-
-// Config rows the vault panel owns; they are kept out of the editable table.
-const CONFIG_VARS = [VAULT_SECRETS_VAR, LEGACY_VAULT_SECRET_VAR];
+import { VAULT_SECRETS_VAR, VAULT_CONFIG_VARS } from 'utils/environments';
 
 const EnvironmentVariables = ({ environment, setIsModified, collection, searchQuery = '', variableType = 'variables' }) => {
   const dispatch = useDispatch();
@@ -37,7 +30,7 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
 
   const filteredEnvironment = useMemo(() => ({
     ...environment,
-    variables: (environment.variables || []).filter((v) => !CONFIG_VARS.includes(v.name))
+    variables: (environment.variables || []).filter((v) => !VAULT_CONFIG_VARS.includes(v.name))
   }), [environment]);
 
   const serializedRefs = useMemo(() => serializeSecretRefs(secretRefs), [secretRefs]);
@@ -45,7 +38,7 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
 
   const handleSave = useCallback(
     (variables) => {
-      const variablesToSave = cloneDeep(variables).filter((v) => !CONFIG_VARS.includes(v.name));
+      const variablesToSave = cloneDeep(variables).filter((v) => !VAULT_CONFIG_VARS.includes(v.name));
       if (serializedRefs) {
         const existing = (environment.variables || []).find((v) => v.name === VAULT_SECRETS_VAR);
         variablesToSave.push({

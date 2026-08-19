@@ -1,7 +1,12 @@
 import React, { useMemo } from 'react';
-import { stripEnvVarUid } from 'utils/environments';
+import { stripEnvVarUid, VAULT_CONFIG_VARS } from 'utils/environments';
 
-const belongsToTab = (variable, isSecret) => (isSecret ? !!variable.secret : !variable.secret);
+// The vault config rows are hidden from the table, so they must not be counted here either —
+// otherwise the Variables tab shows one row more than it renders and reads as permanently unsaved.
+const isConfigVar = (variable) => VAULT_CONFIG_VARS.includes(variable.name);
+
+const belongsToTab = (variable, isSecret) =>
+  !isConfigVar(variable) && (isSecret ? !!variable.secret : !variable.secret);
 
 const useEnvironmentTabs = ({ environment, draft }) =>
   useMemo(() => {
