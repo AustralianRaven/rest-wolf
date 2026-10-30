@@ -4,7 +4,7 @@ import { IconCheck, IconSun, IconMoon, IconDeviceDesktop } from '@tabler/icons';
 import ToolHint from 'components/ToolHint';
 import { useTheme } from 'providers/Theme';
 import { getLightThemes, getDarkThemes } from 'themes/index';
-import ColorPicker from 'components/ColorPicker';
+import AccentColorPicker from 'components/AccentColorPicker';
 import StyledWrapper from './StyledWrapper';
 
 // Constants
@@ -303,7 +303,7 @@ const ThemeDropdown = ({ children }) => {
         {/* The accent is stored per light/dark theme, so this edits whichever one is
             currently on screen - in system mode that follows the OS setting. */}
         <div className="accent-section">
-          <ColorPicker
+          <AccentColorPicker
             label={`${isDisplayingDark ? 'Dark' : 'Light'} accent color`}
             value={isDisplayingDark ? customAccentColorDark : customAccentColorLight}
             onChange={handleAccentChange}
