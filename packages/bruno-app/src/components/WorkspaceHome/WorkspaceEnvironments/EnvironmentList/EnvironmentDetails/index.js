@@ -7,9 +7,8 @@ import {
   saveGlobalEnvironmentExtends,
   updateGlobalEnvironmentColor
 } from 'providers/ReduxStore/slices/global-environments';
-import { addEnvironmentAuthStub, removeEnvironmentAuthStub } from 'providers/ReduxStore/slices/collections';
 import { updateTabState } from 'providers/ReduxStore/slices/tabs';
-import CollectionAuth from 'components/CollectionSettings/Auth';
+import EnvironmentAuth from 'components/Environments/EnvironmentAuth';
 import { validateName, validateNameError } from 'utils/common/regex';
 import toast from 'react-hot-toast';
 import CopyEnvironment from '../../CopyEnvironment';
@@ -22,60 +21,6 @@ import ResponsiveTabs from 'ui/ResponsiveTabs';
 import useEnvironmentTabs from 'hooks/useEnvironmentTabs';
 import StyledWrapper from './StyledWrapper';
 import DeleteGlobalEnvironments from '../../DeleteGlobalEnvironments';
-
-const envAuthStubUid = (environmentUid) => `env-auth:${environmentUid}`;
-
-const GlobalEnvironmentAuthPanel = ({ environment }) => {
-  const dispatch = useDispatch();
-  const stubUid = envAuthStubUid(environment.uid);
-  const stub = useSelector((s) => s.collections.collections.find((c) => c.uid === stubUid));
-
-  useEffect(() => {
-    dispatch(addEnvironmentAuthStub({
-      uid: stubUid,
-      parentCollectionUid: null,
-      environmentUid: environment.uid,
-      isGlobal: true,
-      auth: environment.auth || { mode: 'none' },
-      name: `${environment.name} (env auth)`
-    }));
-    return () => {
-      dispatch(removeEnvironmentAuthStub({ uid: stubUid }));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [environment.uid]);
-
-  useEffect(() => {
-    if (!stub) return;
-    if (stub.draft) return;
-    const current = stub.root?.request?.auth;
-    const next = environment.auth || { mode: 'none' };
-    if (JSON.stringify(current) !== JSON.stringify(next)) {
-      dispatch(addEnvironmentAuthStub({
-        uid: stubUid,
-        parentCollectionUid: null,
-        environmentUid: environment.uid,
-        isGlobal: true,
-        auth: next,
-        name: `${environment.name} (env auth)`
-      }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [environment.auth]);
-
-  if (!stub) {
-    return <div className="text-xs text-muted">Loading auth…</div>;
-  }
-
-  return (
-    <div className="mt-2">
-      <div className="text-xs text-muted mb-2">
-        Authentication used by collections/requests that select <span className="font-medium">Inherit from Environment</span>.
-      </div>
-      <CollectionAuth collection={stub} environmentAuthContext hideHeader saveLabel="Save Authentication" />
-    </div>
-  );
-};
 
 const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuery, setSearchQuery, isSearchExpanded, setIsSearchExpanded, debouncedSearchQuery, searchInputRef }) => {
   const dispatch = useDispatch();
@@ -382,7 +327,7 @@ const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuer
       <div className="content">
         {activeTab === 'auth' ? (
           <div className="flex-1 overflow-y-auto">
-            <GlobalEnvironmentAuthPanel environment={environment} />
+            <EnvironmentAuth environment={environment} collection={null} isGlobal />
           </div>
         ) : (
           <EnvironmentVariables

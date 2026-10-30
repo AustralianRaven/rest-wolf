@@ -128,8 +128,13 @@ export type AuthMode
 
 export interface Auth {
   mode: AuthMode;
-  /** Set when mode is 'named'; points at a saved auth mode by uid. */
+  /**
+   * Points at a saved auth mode by uid. With mode 'named' the auth is only a reference; on an
+   * environment's auth with any other mode it marks a copy of that saved auth, kept in sync.
+   */
   namedAuthModeUid?: string | null;
+  /** The saved auth mode's name, recorded alongside an environment's copy of it. */
+  namedAuthModeName?: string | null;
   awsv4?: AuthAwsV4 | null;
   basic?: AuthBasic | null;
   bearer?: AuthBearer | null;

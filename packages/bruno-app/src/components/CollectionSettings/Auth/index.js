@@ -16,6 +16,7 @@ import OAuth1 from './Oauth1';
 import NTLMAuth from './NTLMAuth';
 import Button from 'ui/Button';
 import { humanizeRequestAuthMode } from 'utils/collections';
+import { getSavedAuthName, isLinkedSavedAuthCopy } from 'utils/auth-modes';
 
 /**
  * Props:
@@ -65,7 +66,7 @@ const Auth = ({ collection, authModeContext = false, environmentAuthContext = fa
             {mode ? (
               <>
                 Using saved auth: <span className="font-medium">{mode.name}</span> ({humanizeRequestAuthMode(mode.auth?.mode)}).
-                <div className="text-muted mt-1">Edit in Environment Settings &rarr; Auth Modes.</div>
+                <div className="text-muted mt-1">Edit in Preferences &rarr; Auth Modes.</div>
               </>
             ) : (
               <span className="text-red-500">Saved auth (missing). Pick another from the dropdown.</span>
@@ -97,6 +98,14 @@ const Auth = ({ collection, authModeContext = false, environmentAuthContext = fa
               ) : (
                 <span className="text-red-500">missing saved auth</span>
               )}
+            </div>
+          );
+        }
+        if (isLinkedSavedAuthCopy(envAuth)) {
+          return (
+            <div className="mt-2 text-xs">
+              Inheriting from environment <span className="font-medium">{activeEnv.name}</span>:&nbsp;
+              <span className="font-medium">{getSavedAuthName(envAuth, savedModes)}</span> ({humanizeRequestAuthMode(envAuth.mode)})
             </div>
           );
         }

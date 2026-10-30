@@ -9,13 +9,13 @@ import {
 import { validateName, validateNameError } from 'utils/common/regex';
 import toast from 'react-hot-toast';
 import usePrevious from 'hooks/usePrevious';
+import StyledWrapper from './StyledWrapper';
 
 /**
- * Mirror of EnvironmentsSidebar for saved auth modes. Lives in the same StyledWrapper so
- * styling stays in sync. No "activate" affordance — auth modes don't have an active state —
- * but adds Duplicate / Delete row actions.
+ * The list of saved auth modes: search, inline create and rename, and a Duplicate row action.
+ * Newly added modes are selected; when the selected mode is deleted the first one is.
  */
-const AuthModesSidebar = ({ selection, setSelection }) => {
+const AuthModesList = ({ selectedUid, onSelect }) => {
   const dispatch = useDispatch();
   const authModes = useSelector((s) => s['auth-modes']?.authModes || []);
 
@@ -35,13 +35,10 @@ const AuthModesSidebar = ({ selection, setSelection }) => {
     if (!prevUids) return;
     if (uids.length > prevUids.length) {
       const added = authModes.find((m) => !prevUids.includes(m.uid));
-      if (added) setSelection({ kind: 'auth-mode', uid: added.uid });
+      if (added) onSelect(added.uid);
     }
-    if (uids.length < prevUids.length && selection?.kind === 'auth-mode') {
-      const stillExists = authModes.some((m) => m.uid === selection.uid);
-      if (!stillExists) {
-        setSelection(authModes[0] ? { kind: 'auth-mode', uid: authModes[0].uid } : null);
-      }
+    if (uids.length < prevUids.length && !authModes.some((m) => m.uid === selectedUid)) {
+      onSelect(authModes[0]?.uid ?? null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uids.join(',')]);
@@ -73,13 +70,15 @@ const AuthModesSidebar = ({ selection, setSelection }) => {
     return null;
   };
 
-  const handleClick = (m) => setSelection({ kind: 'auth-mode', uid: m.uid });
+  const handleClick = (m) => onSelect(m.uid);
 
   const handleDoubleClick = (m) => {
     setRenamingUid(m.uid);
     setNewName(m.name);
     setNameError('');
-    setTimeout(() => { inputRef.current?.focus(); inputRef.current?.select(); }, 50);
+    setTimeout(() => {
+      inputRef.current?.focus(); inputRef.current?.select();
+    }, 50);
   };
 
   const handleCreateClick = () => {
@@ -89,11 +88,15 @@ const AuthModesSidebar = ({ selection, setSelection }) => {
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
-  const handleCancelCreate = () => { setIsCreatingInline(false); setNewName(''); setNameError(''); };
+  const handleCancelCreate = () => {
+    setIsCreatingInline(false); setNewName(''); setNameError('');
+  };
 
   const handleSaveNew = () => {
     const error = validateAuthModeName(newName);
-    if (error) { setNameError(error); return; }
+    if (error) {
+      setNameError(error); return;
+    }
     dispatch(createAuthMode({ name: newName, auth: { mode: 'none' } }))
       .then(() => {
         toast.success('Authentication mode created');
@@ -104,16 +107,23 @@ const AuthModesSidebar = ({ selection, setSelection }) => {
       .catch(() => toast.error('Failed to create authentication mode'));
   };
 
-  const handleNameChange = (e) => { setNewName(e.target.value); if (nameError) setNameError(''); };
+  const handleNameChange = (e) => {
+    setNewName(e.target.value); if (nameError) setNameError('');
+  };
 
   const handleNameKeyDown = (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); renamingUid ? handleSaveRename() : handleSaveNew(); }
-    else if (e.key === 'Escape') { e.preventDefault(); renamingUid ? handleCancelRename() : handleCancelCreate(); }
+    if (e.key === 'Enter') {
+      e.preventDefault(); renamingUid ? handleSaveRename() : handleSaveNew();
+    } else if (e.key === 'Escape') {
+      e.preventDefault(); renamingUid ? handleCancelRename() : handleCancelCreate();
+    }
   };
 
   const handleSaveRename = () => {
     const error = validateAuthModeName(newName, renamingUid);
-    if (error) { setNameError(error); return; }
+    if (error) {
+      setNameError(error); return;
+    }
     dispatch(renameAuthMode({ uid: renamingUid, name: newName }))
       .then(() => {
         toast.success('Authentication mode renamed');
@@ -124,7 +134,9 @@ const AuthModesSidebar = ({ selection, setSelection }) => {
       .catch(() => toast.error('An error occurred while renaming'));
   };
 
-  const handleCancelRename = () => { setRenamingUid(null); setNewName(''); setNameError(''); };
+  const handleCancelRename = () => {
+    setRenamingUid(null); setNewName(''); setNameError('');
+  };
 
   const handleCopy = (e, m) => {
     e.stopPropagation();
@@ -142,10 +154,10 @@ const AuthModesSidebar = ({ selection, setSelection }) => {
   };
 
   const filtered = authModes.filter((m) => m.name.toLowerCase().includes(searchText.toLowerCase()));
-  const isSelected = (m) => selection?.kind === 'auth-mode' && selection.uid === m.uid;
+  const isSelected = (m) => selectedUid === m.uid;
 
   return (
-    <div className="sidebar-section">
+    <StyledWrapper className="auth-modes-list-section">
       <div className="sidebar-header">
         <h2 className="title">Authentication Modes</h2>
         <div className="flex items-center gap-2">
@@ -166,12 +178,12 @@ const AuthModesSidebar = ({ selection, setSelection }) => {
         />
       </div>
 
-      <div className="environments-list">
+      <div className="auth-modes-list">
         {filtered.map((m) => (
           <div
             key={m.uid}
             id={m.uid}
-            className={`environment-item ${isSelected(m) ? 'active' : ''} ${renamingUid === m.uid ? 'renaming' : ''}`}
+            className={`auth-mode-item ${isSelected(m) ? 'active' : ''} ${renamingUid === m.uid ? 'renaming' : ''}`}
             onClick={() => renamingUid !== m.uid && handleClick(m)}
             onDoubleClick={() => handleDoubleClick(m)}
           >
@@ -180,7 +192,7 @@ const AuthModesSidebar = ({ selection, setSelection }) => {
                 <input
                   ref={inputRef}
                   type="text"
-                  className="environment-name-input"
+                  className="auth-mode-name-input"
                   value={newName}
                   onChange={handleNameChange}
                   onKeyDown={handleNameKeyDown}
@@ -200,8 +212,8 @@ const AuthModesSidebar = ({ selection, setSelection }) => {
               </div>
             ) : (
               <>
-                <span className="environment-name">{m.name}</span>
-                <div className="environment-actions">
+                <span className="auth-mode-name">{m.name}</span>
+                <div className="auth-mode-actions">
                   <button className="row-action-btn" onClick={(e) => handleCopy(e, m)} title="Duplicate">
                     <IconCopy size={14} strokeWidth={1.5} />
                   </button>
@@ -212,11 +224,11 @@ const AuthModesSidebar = ({ selection, setSelection }) => {
         ))}
 
         {isCreatingInline && (
-          <div className="environment-item creating" ref={createContainerRef}>
+          <div className="auth-mode-item creating" ref={createContainerRef}>
             <input
               ref={inputRef}
               type="text"
-              className="environment-name-input"
+              className="auth-mode-name-input"
               value={newName}
               onChange={handleNameChange}
               onKeyDown={handleNameKeyDown}
@@ -237,14 +249,14 @@ const AuthModesSidebar = ({ selection, setSelection }) => {
           </div>
         )}
 
-        {nameError && (isCreatingInline || renamingUid) && <div className="env-error">{nameError}</div>}
+        {nameError && (isCreatingInline || renamingUid) && <div className="name-error">{nameError}</div>}
 
         {!filtered.length && !isCreatingInline && (
           <div className="empty-list-hint">No authentication modes yet. Click + to create one.</div>
         )}
       </div>
-    </div>
+    </StyledWrapper>
   );
 };
 
-export default AuthModesSidebar;
+export default AuthModesList;

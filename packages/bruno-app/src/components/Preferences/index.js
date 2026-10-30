@@ -12,7 +12,8 @@ import {
   IconSquareLetterB,
   IconDatabase,
   IconCertificate,
-  IconLock
+  IconLock,
+  IconKey
 } from '@tabler/icons';
 
 import IconSparkles from 'components/Icons/IconSparkles';
@@ -20,6 +21,7 @@ import Support from './Support';
 import General from './General';
 import Themes from './Themes';
 import SecretsManager from './SecretsManager';
+import AuthModes from './AuthModes';
 import Proxy from './ProxySettings';
 import Display from './Display';
 import Keybindings from './Keybindings';
@@ -53,6 +55,10 @@ const Preferences = () => {
 
       case 'secretsManager': {
         return <SecretsManager />;
+      }
+
+      case 'authModes': {
+        return <AuthModes />;
       }
 
       case 'themes': {
@@ -116,6 +122,10 @@ const Preferences = () => {
           <div className={getTabClassname('secretsManager')} role="tab" onClick={() => setTab('secretsManager')}>
             <IconLock size={16} strokeWidth={1.5} />
             Secrets Manager
+          </div>
+          <div className={getTabClassname('authModes')} role="tab" onClick={() => setTab('authModes')}>
+            <IconKey size={16} strokeWidth={1.5} />
+            Auth Modes
           </div>
           <div className={getTabClassname('clientCert')} role="tab" onClick={() => setTab('clientCert')}>
             <IconCertificate size={16} strokeWidth={1.5} />

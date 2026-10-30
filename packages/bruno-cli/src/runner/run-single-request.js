@@ -178,7 +178,7 @@ const runSingleRequest = async function (
     let preRequestTestResults = [];
     let postResponseTestResults = [];
 
-    request = await prepareRequest(item, collection);
+    request = await prepareRequest(item, collection, { auth: collection.environmentAuth });
 
     // Set global environment variables on the request for scripts to access via bru.getGlobalEnvVar()
     request.globalEnvironmentVariables = globalEnvVars;

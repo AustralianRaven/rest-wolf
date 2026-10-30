@@ -3,6 +3,7 @@ import get from 'lodash/get';
 import { updateAuth } from 'providers/ReduxStore/slices/collections';
 import { useSelector } from 'react-redux';
 import { humanizeRequestAuthMode } from 'utils/collections';
+import { getSavedAuthName, isLinkedSavedAuthCopy } from 'utils/auth-modes';
 import AuthMode from './AuthMode';
 import { getEffectiveAuthSource } from 'utils/auth';
 import AuthFields from './AuthFields';
@@ -39,7 +40,7 @@ const Auth = ({ item, collection }) => {
             {mode ? (
               <>
                 Using saved auth: <span className="font-medium">{mode.name}</span> ({humanizeRequestAuthMode(mode.auth?.mode)}).
-                <div className="text-muted mt-1">Edit in Environment Settings &rarr; Auth Modes.</div>
+                <div className="text-muted mt-1">Edit in Preferences &rarr; Auth Modes.</div>
               </>
             ) : (
               <span className="text-red-500">Saved auth (missing).</span>
@@ -71,6 +72,10 @@ const Auth = ({ item, collection }) => {
               ) : (
                 <span className="text-red-500">missing saved auth</span>
               )
+            ) : isLinkedSavedAuthCopy(envAuth) ? (
+              <>
+                <span className="font-medium">{getSavedAuthName(envAuth, savedModes)}</span> ({humanizeRequestAuthMode(envAuth.mode)})
+              </>
             ) : (
               humanizeRequestAuthMode(envAuth.mode)
             )}

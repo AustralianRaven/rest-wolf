@@ -6,6 +6,7 @@ import StatusBadge from 'ui/StatusBadge/index';
 import { useDispatch, useSelector } from 'react-redux';
 import { updateCollectionAuth, updateCollectionAuthMode } from 'providers/ReduxStore/slices/collections';
 import { humanizeRequestAuthMode } from 'utils/collections';
+import { getSavedAuthName } from 'utils/auth-modes';
 import StyledWrapper from './StyledWrapper';
 
 const BUILT_IN_ITEMS = (onModeChange) => ([
@@ -35,8 +36,9 @@ const BUILT_IN_ITEMS = (onModeChange) => ([
 
 const AuthMode = ({ collection, excludeOptions = [], hideSavedAuths = false }) => {
   const dispatch = useDispatch();
-  const authMode = collection.draft?.root ? get(collection, 'draft.root.request.auth.mode') : get(collection, 'root.request.auth.mode');
-  const namedUid = collection.draft?.root ? get(collection, 'draft.root.request.auth.namedAuthModeUid') : get(collection, 'root.request.auth.namedAuthModeUid');
+  const auth = collection.draft?.root ? get(collection, 'draft.root.request.auth') : get(collection, 'root.request.auth');
+  const authMode = auth?.mode;
+  const namedUid = auth?.namedAuthModeUid;
   const savedModes = useSelector((s) => s['auth-modes']?.authModes || []);
 
   const onModeChange = useCallback((value) => {
@@ -76,15 +78,10 @@ const AuthMode = ({ collection, excludeOptions = [], hideSavedAuths = false }) =
     return groups;
   }, [savedModes, onModeChange, onPickNamed, excludeOptions, hideSavedAuths, collection.uid]);
 
-  const selectedItemId = authMode === 'named' && namedUid ? `named:${namedUid}` : authMode;
+  // An environment's copy of a saved auth keeps its concrete mode but still reads as that saved auth.
+  const selectedItemId = namedUid ? `named:${namedUid}` : authMode;
 
-  const triggerLabel = (() => {
-    if (authMode === 'named') {
-      const m = savedModes.find((x) => x.uid === namedUid);
-      return m ? m.name : 'Saved Auth';
-    }
-    return humanizeRequestAuthMode(authMode);
-  })();
+  const triggerLabel = namedUid ? getSavedAuthName(auth, savedModes) : humanizeRequestAuthMode(authMode);
 
   return (
     <StyledWrapper>

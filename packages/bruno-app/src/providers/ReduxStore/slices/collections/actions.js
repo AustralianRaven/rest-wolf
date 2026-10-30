@@ -10,6 +10,7 @@ import set from 'lodash/set';
 import trim from 'lodash/trim';
 import path, { normalizePath, isPathExternalToBasePath } from 'utils/common/path';
 import { insertTaskIntoQueue } from 'providers/ReduxStore/slices/app';
+import { saveEnvironmentAuthFromStub } from './environment-auth';
 import toast from 'react-hot-toast';
 import IpcErrorModal from 'components/Errors/IpcErrorModal/index';
 import SaveFileErrorModal from 'components/Errors/SaveFileErrorModal/index';
@@ -61,8 +62,6 @@ import {
   saveRequest as _saveRequest,
   saveEnvironment as _saveEnvironment,
   _setEnvironmentAuthMode,
-  replaceEnvironmentAuthStubAuth,
-  setCollectionEnvironmentAuth,
   saveEnvironmentExtends as _saveEnvironmentExtends,
   updateEnvironmentColor as _updateEnvironmentColor,
   saveCollectionDraft,
@@ -2178,68 +2177,6 @@ export const deleteEnvironment = (environmentUid, collectionUid) => (dispatch, g
       .invoke('renderer:delete-environment', collection.pathname, environment.name)
       .then(resolve)
       .catch(reject);
-  });
-};
-
-/**
- * Persist an environment-auth stub-collection's draft to disk.
- * The stub carries: parentCollectionUid (or null for global), environmentUid, isGlobalEnvironment.
- */
-export const saveEnvironmentAuthFromStub = ({ uid }) => (dispatch, getState) => {
-  return new Promise((resolve, reject) => {
-    const { ipcRenderer } = window;
-    const state = getState();
-    const stub = state.collections.collections.find((c) => c.__isEnvironmentAuth__ && c.uid === uid);
-    if (!stub) return reject(new Error('Environment auth stub not found'));
-    const auth = stub.draft?.root?.request?.auth || stub.root?.request?.auth || { mode: 'none' };
-
-    if (stub.isGlobalEnvironment) {
-      const env = state.globalEnvironments.globalEnvironments.find((e) => e?.uid === stub.environmentUid);
-      if (!env) return reject(new Error('Global environment not found'));
-      const { workspaces } = state;
-      const workspace = workspaces?.workspaces?.find((w) => w.uid === workspaces.activeWorkspaceUid);
-      const workspacePath = workspace?.pathname;
-      const workspaceUid = workspace?.uid;
-      ipcRenderer
-        .invoke('renderer:save-global-environment', {
-          environmentUid: stub.environmentUid,
-          variables: env.variables || [],
-          auth,
-          workspaceUid,
-          workspacePath
-        })
-        .then(() => {
-          dispatch({
-            type: 'global-environments/_setGlobalEnvironmentAuth',
-            payload: { environmentUid: stub.environmentUid, auth }
-          });
-          dispatch(replaceEnvironmentAuthStubAuth({ uid, auth }));
-          resolve();
-        })
-        .catch(reject);
-    } else {
-      const collection = findCollectionByUid(state.collections.collections, stub.parentCollectionUid);
-      if (!collection) return reject(new Error('Parent collection not found'));
-      const environment = findEnvironmentInCollection(collection, stub.environmentUid);
-      if (!environment) return reject(new Error('Environment not found'));
-
-      const envForSave = cloneDeep(environment);
-      envForSave.auth = auth;
-
-      environmentSchema
-        .validate(envForSave, { stripUnknown: true })
-        .then((sanitizedEnv) => ipcRenderer.invoke('renderer:save-environment', collection.pathname, sanitizedEnv))
-        .then(() => {
-          dispatch(setCollectionEnvironmentAuth({
-            collectionUid: collection.uid,
-            environmentUid: environment.uid,
-            auth
-          }));
-          dispatch(replaceEnvironmentAuthStubAuth({ uid, auth }));
-          resolve();
-        })
-        .catch(reject);
-    }
   });
 };
 

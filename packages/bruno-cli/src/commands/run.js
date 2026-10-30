@@ -400,6 +400,10 @@ const handler = async function (argv) {
     let globalEnvVars = {};
     let envFileDescriptor = null;
     let globalEnvFileDescriptor = null;
+    // Auth carried by the selected environments, for requests using "Inherit from Environment".
+    // As in the app, a selected collection environment wins over the global one even without auth.
+    let collectionEnvironmentAuth;
+    let globalEnvironmentAuth = null;
     // Enabled entries of an `--env-file`, handed to a `--env` passed alongside it: both files'
     // variables reach the same runtime map, but only the `--env` file is written back, and a name
     // belongs to the file that declares it.
@@ -430,11 +434,12 @@ const handler = async function (argv) {
       try {
         // An `--env-file` is loaded exactly as the file reads: its `extends` chain is left
         // unresolved, even when the path points at one of the collection's own environments.
-        const { variables: environmentVariables, ownVariables } = loadEnvironmentFromFile({
+        const { variables: environmentVariables, ownVariables, auth } = loadEnvironmentFromFile({
           filePath: envFilePath,
           resolveInheritance: false
         });
         envVars = environmentVariables;
+        collectionEnvironmentAuth = auth;
         envFileVariables = ownVariables;
         envFileDescriptor = {
           path: envFilePath,
@@ -463,8 +468,9 @@ const handler = async function (argv) {
         const defaultEnvFilePath = path.join(collectionPath, 'environments', `${defaultEnvironment}${envExt}`);
         if (await exists(defaultEnvFilePath)) {
           try {
-            const { variables: environmentVariables, inheritedVariables: inheritedEnvironmentVariables } = loadEnvironmentFromFile({ filePath: defaultEnvFilePath, name: defaultEnvironment });
+            const { variables: environmentVariables, inheritedVariables: inheritedEnvironmentVariables, auth } = loadEnvironmentFromFile({ filePath: defaultEnvFilePath, name: defaultEnvironment });
             envVars = { ...envVars, ...environmentVariables };
+            collectionEnvironmentAuth = auth;
             envFileDescriptor = {
               path: defaultEnvFilePath,
               format: collection.format,
@@ -493,8 +499,9 @@ const handler = async function (argv) {
         process.exit(constants.EXIT_STATUS.ERROR_ENV_NOT_FOUND);
       }
       try {
-        const { variables: environmentVariables, inheritedVariables: inheritedEnvironmentVariables } = loadEnvironmentFromFile({ filePath: collectionEnvFilePath, name: env });
+        const { variables: environmentVariables, inheritedVariables: inheritedEnvironmentVariables, auth } = loadEnvironmentFromFile({ filePath: collectionEnvFilePath, name: env });
         envVars = { ...envVars, ...environmentVariables };
+        collectionEnvironmentAuth = auth;
         envFileDescriptor = {
           path: collectionEnvFilePath,
           format: collection.format,
@@ -551,8 +558,9 @@ const handler = async function (argv) {
       }
 
       try {
-        const { variables: environmentVariables, inheritedVariables: inheritedEnvironmentVariables } = loadEnvironmentFromFile({ filePath: globalEnvFilePath, name: globalEnv });
+        const { variables: environmentVariables, inheritedVariables: inheritedEnvironmentVariables, auth } = loadEnvironmentFromFile({ filePath: globalEnvFilePath, name: globalEnv });
         globalEnvVars = environmentVariables;
+        globalEnvironmentAuth = auth;
         globalEnvFileDescriptor = {
           path: globalEnvFilePath,
           format: 'yml',
@@ -563,6 +571,8 @@ const handler = async function (argv) {
         process.exit(constants.EXIT_STATUS.ERROR_INVALID_FILE);
       }
     }
+
+    collection.environmentAuth = collectionEnvironmentAuth !== undefined ? collectionEnvironmentAuth : globalEnvironmentAuth;
 
     if (envVar) {
       let processVars;

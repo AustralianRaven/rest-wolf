@@ -10,13 +10,11 @@ import DeleteAuthMode from '../DeleteAuthMode';
 import StyledWrapper from './StyledWrapper';
 
 /**
- * Workspace-page editor for a saved authentication mode.
- *
- * Mirrors the env-detail layout exactly: a header showing the mode's name with edit (inline
- * rename), copy and delete actions; a description line; then the full CollectionSettings
- * Auth UI bound to the mode's stub-collection.
+ * Editor for a saved authentication mode: a header with the mode's name and rename, copy and
+ * delete actions; a description line; then the full CollectionSettings Auth UI bound to the
+ * mode's stub-collection.
  */
-const WorkspaceAuthModeDetails = ({ authMode }) => {
+const AuthModeDetails = ({ authMode }) => {
   const dispatch = useDispatch();
   const authModes = useSelector((s) => s['auth-modes']?.authModes || []);
   const stub = useSelector((s) =>
@@ -168,7 +166,7 @@ const WorkspaceAuthModeDetails = ({ authMode }) => {
 
       {!isRenaming && (
         <div className="header-description">
-          Configure authentication here exactly as you would on a collection&apos;s Auth tab. Saved authentication modes can be referenced from collections, requests, or environments.
+          Configure authentication here exactly as you would on a collection&apos;s Auth tab. Saved authentication modes are stored on this machine and can be used from collections, requests, or environments. An environment stores a copy that updates when you save here, so collections you share still authenticate.
         </div>
       )}
 
@@ -179,4 +177,4 @@ const WorkspaceAuthModeDetails = ({ authMode }) => {
   );
 };
 
-export default WorkspaceAuthModeDetails;
+export default AuthModeDetails;

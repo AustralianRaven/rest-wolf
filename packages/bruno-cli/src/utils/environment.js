@@ -142,7 +142,8 @@ const loadEnvironmentFromFile = ({ filePath, name, resolveInheritance = true }) 
   return {
     variables,
     inheritedVariables: environment?.inheritedVariables || [],
-    ownVariables: (environment?.variables || []).filter((v) => v.enabled)
+    ownVariables: (environment?.variables || []).filter((v) => v.enabled),
+    auth: environment?.auth || null
   };
 };
 

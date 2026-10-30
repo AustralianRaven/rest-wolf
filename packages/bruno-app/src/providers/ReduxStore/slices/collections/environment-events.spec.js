@@ -61,6 +61,20 @@ describe('collectionAddEnvFileEvent', () => {
     expect(nextState.collections[0].environments[0].externalSecrets).toEqual(externalSecrets);
   });
 
+  it.each([
+    ['picks up auth added to the file', undefined, { mode: 'bearer', bearer: { token: '{{TOKEN}}' }, namedAuthModeUid: 'kc-v2', namedAuthModeName: 'KC V2' }],
+    ['drops auth removed from the file', { mode: 'bearer', bearer: { token: '{{TOKEN}}' } }, undefined]
+  ])('%s when an existing environment changes', (_title, authBefore, authAfter) => {
+    const state = makeInitialState([makeEnvironment({ auth: authBefore })]);
+
+    const nextState = reducer(
+      state,
+      collectionAddEnvFileEvent({ environment: makeEnvironment({ auth: authAfter }), collectionUid: COLLECTION_UID })
+    );
+
+    expect(nextState.collections[0].environments[0].auth).toEqual(authAfter);
+  });
+
   it('keeps variable dataType when a new environment is added', () => {
     const state = makeInitialState();
 

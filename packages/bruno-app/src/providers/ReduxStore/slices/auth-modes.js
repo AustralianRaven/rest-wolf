@@ -7,6 +7,7 @@ import {
   renameAuthModeStubCollection,
   replaceAuthModeStubAuth
 } from 'providers/ReduxStore/slices/collections';
+import { syncLinkedEnvironmentAuths } from 'providers/ReduxStore/slices/collections/environment-auth';
 
 const initialState = {
   authModes: []
@@ -96,8 +97,10 @@ export const renameAuthMode = ({ uid, name }) => (dispatch) => {
       .then(() => {
         dispatch(_renameAuthMode({ uid, name }));
         dispatch(renameAuthModeStubCollection({ uid, name }));
-        resolve();
+        // Linked environment copies record the saved auth's name.
+        return dispatch(syncLinkedEnvironmentAuths(uid));
       })
+      .then(resolve)
       .catch(reject);
   });
 };
@@ -151,8 +154,9 @@ export const saveAuthModeFromStub = ({ uid }) => (dispatch, getState) => {
       .then(() => {
         dispatch(_saveAuthMode({ uid, auth }));
         dispatch(replaceAuthModeStubAuth({ uid, auth }));
-        resolve();
+        return dispatch(syncLinkedEnvironmentAuths(uid));
       })
+      .then(resolve)
       .catch(reject);
   });
 };

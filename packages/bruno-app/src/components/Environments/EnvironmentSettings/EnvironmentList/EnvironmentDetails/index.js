@@ -3,12 +3,11 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { resolveEnvironmentInheritance } from '@usebruno/common/utils';
 import { renameEnvironment, saveEnvironmentExtends, updateEnvironmentColor } from 'providers/ReduxStore/slices/collections/actions';
-import { addEnvironmentAuthStub, removeEnvironmentAuthStub } from 'providers/ReduxStore/slices/collections';
 import { validateName, validateNameError } from 'utils/common/regex';
 import toast from 'react-hot-toast';
 import CopyEnvironment from 'components/Environments/EnvironmentSettings/CopyEnvironment';
 import EnvironmentVariables from './EnvironmentVariables';
-import CollectionAuth from 'components/CollectionSettings/Auth';
+import EnvironmentAuth from 'components/Environments/EnvironmentAuth';
 import InheritsFrom from 'components/Environments/Common/InheritsFrom';
 import EnvironmentInheritanceWarning from 'components/Environments/Common/EnvironmentInheritanceWarning';
 import ColorPicker from 'components/ColorPicker';
@@ -18,63 +17,6 @@ import { updateTabState } from 'providers/ReduxStore/slices/tabs';
 import useEnvironmentTabs from 'hooks/useEnvironmentTabs';
 import StyledWrapper from './StyledWrapper';
 import DeleteCollectionEnvironments from '../../DeleteCollectionEnvironments';
-
-const envAuthStubUid = (environmentUid) => `env-auth:${environmentUid}`;
-
-const EnvironmentAuthPanel = ({ environment, collection, isGlobal }) => {
-  const dispatch = useDispatch();
-  const stubUid = envAuthStubUid(environment.uid);
-  const stub = useSelector((s) => s.collections.collections.find((c) => c.uid === stubUid));
-
-  // Register / refresh the stub whenever the environment's auth changes (eg. the file
-  // watcher updated it). Clean up on unmount.
-  useEffect(() => {
-    dispatch(addEnvironmentAuthStub({
-      uid: stubUid,
-      parentCollectionUid: isGlobal ? null : collection?.uid,
-      environmentUid: environment.uid,
-      isGlobal: !!isGlobal,
-      auth: environment.auth || { mode: 'none' },
-      name: `${environment.name} (env auth)`
-    }));
-    return () => {
-      dispatch(removeEnvironmentAuthStub({ uid: stubUid }));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [environment.uid]);
-
-  // If the underlying env.auth changed externally and there's no draft, refresh the stub.
-  useEffect(() => {
-    if (!stub) return;
-    if (stub.draft) return;
-    const current = stub.root?.request?.auth;
-    const next = environment.auth || { mode: 'none' };
-    if (JSON.stringify(current) !== JSON.stringify(next)) {
-      dispatch(addEnvironmentAuthStub({
-        uid: stubUid,
-        parentCollectionUid: isGlobal ? null : collection?.uid,
-        environmentUid: environment.uid,
-        isGlobal: !!isGlobal,
-        auth: next,
-        name: `${environment.name} (env auth)`
-      }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [environment.auth]);
-
-  if (!stub) {
-    return <div className="text-xs text-muted">Loading auth…</div>;
-  }
-
-  return (
-    <div className="mt-2">
-      <div className="text-xs text-muted mb-2">
-        Auth used by collections/requests that select <span className="font-medium">Inherit from Environment</span>.
-      </div>
-      <CollectionAuth collection={stub} environmentAuthContext hideHeader saveLabel="Save Environment Auth" />
-    </div>
-  );
-};
 
 const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuery, setSearchQuery, isSearchExpanded, setIsSearchExpanded, debouncedSearchQuery, searchInputRef }) => {
   const dispatch = useDispatch();
@@ -380,7 +322,7 @@ const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuer
       <div className="content">
         {activeTab === 'auth' ? (
           <div className="flex-1 overflow-y-auto">
-            <EnvironmentAuthPanel environment={environment} collection={collection} isGlobal={false} />
+            <EnvironmentAuth environment={environment} collection={collection} isGlobal={false} />
           </div>
         ) : (
           <EnvironmentVariables

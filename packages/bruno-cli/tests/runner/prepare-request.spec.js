@@ -846,4 +846,50 @@ describe('prepare-request: prepareRequest', () => {
       expect(result.data.variables).toBe('{}');
     });
   });
+
+  describe('Inherit from Environment', () => {
+    // Auth is merged along the request's tree path, so the request must be part of the collection.
+    const buildFixtures = () => {
+      const item = {
+        name: 'Test Request',
+        type: 'http-request',
+        pathname: '/collection/request.bru',
+        request: {
+          method: 'GET',
+          headers: [],
+          params: [],
+          url: 'https://usebruno.com',
+          auth: { mode: 'inherit-environment' },
+          script: {},
+          vars: {}
+        }
+      };
+      const collection = {
+        name: 'Test Collection',
+        pathname: '/collection',
+        items: [item],
+        root: { request: { auth: { mode: 'none' } } }
+      };
+      return { item, collection };
+    };
+
+    it('uses the copy of a saved auth stored on the environment', async () => {
+      const { item, collection } = buildFixtures();
+      const environment = {
+        auth: { mode: 'bearer', bearer: { token: '{{TOKEN}}' }, namedAuthModeUid: 'kc-v2', namedAuthModeName: 'KC V2' }
+      };
+
+      const result = await prepareRequest(item, collection, environment);
+
+      expect(result.headers).toHaveProperty('Authorization', 'Bearer {{TOKEN}}');
+    });
+
+    it('sends no auth when the environment has none', async () => {
+      const { item, collection } = buildFixtures();
+
+      const result = await prepareRequest(item, collection, { auth: null });
+
+      expect(result.headers).not.toHaveProperty('Authorization');
+    });
+  });
 });

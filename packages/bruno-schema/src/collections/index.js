@@ -442,6 +442,9 @@ const authSchema = Yup.object({
     ])
     .required('mode is required'),
   namedAuthModeUid: Yup.string().nullable(),
+  // Set on an environment's copy of a saved auth: the saved auth's name, kept so the copy can be
+  // labelled on machines that don't have that saved auth.
+  namedAuthModeName: Yup.string().nullable(),
   awsv4: authAwsV4Schema.nullable().default(undefined),
   basic: authBasicSchema.nullable().default(undefined),
   bearer: authBearerSchema.nullable().default(undefined),

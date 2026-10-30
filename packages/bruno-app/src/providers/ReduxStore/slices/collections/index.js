@@ -3483,6 +3483,7 @@ export const collectionsSlice = createSlice({
           existingEnv.color = environment.color;
           existingEnv.externalSecrets = environment.externalSecrets;
           existingEnv.extends = environment.extends;
+          existingEnv.auth = environment.auth;
         } else {
           collection.environments.push(environment);
           collection.environments.sort((a, b) => a.name.localeCompare(b.name));

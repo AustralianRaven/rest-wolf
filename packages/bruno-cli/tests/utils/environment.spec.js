@@ -259,4 +259,23 @@ describe('loadEnvironmentFromFile', () => {
 
     expect(ownVariables.map((row) => row.name)).toEqual(['host']);
   });
+
+  it.each(['bru', 'yml'])('returns the auth stored on a .%s environment', (format) => {
+    const auth = {
+      mode: 'oauth2',
+      oauth2: { grantType: 'client_credentials', accessTokenUrl: '{{TOKEN_URL}}', clientId: '{{CLIENT_ID}}' },
+      namedAuthModeUid: 'kc-v2',
+      namedAuthModeName: 'KC V2'
+    };
+    const filePath = path.join(environmentsDir, `dev.${format}`);
+    fs.writeFileSync(filePath, stringifyEnvironment({ name: 'dev', variables: [], auth }, { format }));
+
+    expect(loadEnvironmentFromFile({ filePath, name: 'dev' }).auth).toEqual(auth);
+  });
+
+  it('returns null auth for an environment without one', () => {
+    const filePath = writeInheritingEnvironments();
+
+    expect(loadEnvironmentFromFile({ filePath, name: 'dev' }).auth).toBeNull();
+  });
 });

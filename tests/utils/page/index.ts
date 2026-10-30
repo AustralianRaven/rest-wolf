@@ -14,6 +14,7 @@ export * from './mounting';
 export * from './collection/migrate-to-yml';
 export * from './collection/proxy';
 export * from './preferences';
+export * from './environment-auth';
 export * from './ai';
 export * from './mock-server';
 export * from '../snapshot';
