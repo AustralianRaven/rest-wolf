@@ -46,6 +46,10 @@ window.JSHINT = JSHINT;
 const NORMAL_GUTTERS = ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'];
 const TAB_SIZE = 2;
 
+// Soft-wrapping one huge line makes CodeMirror re-measure it on every scroll, so the degraded
+// long-line profile always scrolls it horizontally instead.
+const resolveLineWrapping = (props, degraded) => !degraded && (props.enableLineWrapping ?? true);
+
 const buildCodeMirrorOptions = ({
   profile,
   props,
@@ -62,7 +66,7 @@ const buildCodeMirrorOptions = ({
     value,
     placeholder: '...',
     lineNumbers: !degraded,
-    lineWrapping: props.enableLineWrapping ?? true,
+    lineWrapping: resolveLineWrapping(props, degraded),
     tabSize: TAB_SIZE,
     mode: degraded ? null : (props.mode || 'application/ld+json'),
     brunoVarInfo: !degraded && props.enableBrunoVarInfo !== false ? {
@@ -93,7 +97,7 @@ const applyEditorProfile = (
   const degraded = profile === 'degraded';
   const variables = getAllVariables(props.collection, props.item);
 
-  editor.setOption('lineWrapping', props.enableLineWrapping ?? true);
+  editor.setOption('lineWrapping', resolveLineWrapping(props, degraded));
   editor.setOption('lineNumbers', !degraded);
   editor.setOption('autoCloseBrackets', !degraded);
   editor.setOption('matchBrackets', !degraded);
@@ -577,7 +581,7 @@ class CodeEditor extends React.Component {
     }
 
     if (this.props.enableLineWrapping !== prevProps.enableLineWrapping) {
-      this.editor.setOption('lineWrapping', this.props.enableLineWrapping ?? true);
+      this.editor.setOption('lineWrapping', resolveLineWrapping(this.props, this.longLineMode));
     }
 
     if (this.props.mode !== prevProps.mode && !this.longLineMode) {

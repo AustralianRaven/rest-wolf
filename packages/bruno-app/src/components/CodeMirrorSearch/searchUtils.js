@@ -16,23 +16,25 @@ function escapeRegExp(string) {
  */
 export function findSearchMatches(editor, searchText, regex, caseSensitive, wholeWord, limit = MAX_MATCHES) {
   try {
-    let query, options = {};
+    const flags = caseSensitive ? 'g' : 'gi';
+    let query;
     if (regex) {
       try {
-        query = new RegExp(searchText, caseSensitive ? 'g' : 'gi');
+        query = new RegExp(searchText, flags);
       } catch (error) {
         console.warn('Invalid regex provided in search!', error);
         return [];
       }
-    } else if (wholeWord) {
-      const escaped = escapeRegExp(searchText);
-      query = new RegExp(`\\b${escaped}\\b`, caseSensitive ? 'g' : 'gi');
     } else {
-      query = searchText;
-      options = { caseFold: !caseSensitive };
+      // Literal text is searched as an escaped regex, never as a plain string. CodeMirror's
+      // string cursor re-slices and case-folds the rest of the line on every hit, which is
+      // quadratic on a long line (e.g. a base64 payload) and freezes the app; its regex
+      // cursor resumes from lastIndex instead.
+      const escaped = escapeRegExp(searchText);
+      query = new RegExp(wholeWord ? `\\b${escaped}\\b` : escaped, flags);
     }
 
-    const cursor = editor.getSearchCursor(query, { line: 0, ch: 0 }, options);
+    const cursor = editor.getSearchCursor(query, { line: 0, ch: 0 });
     const out = [];
     while (cursor.findNext()) {
       out.push({ from: cursor.from(), to: cursor.to() });

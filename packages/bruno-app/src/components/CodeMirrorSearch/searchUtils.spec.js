@@ -17,16 +17,27 @@ function makeMockEditor(matchResults = []) {
 
 describe('findSearchMatches', () => {
   describe('literal search (default)', () => {
-    it('passes caseFold:true for case-insensitive search', () => {
+    it('searches the literal text as an escaped regex', () => {
       const editor = makeMockEditor();
-      findSearchMatches(editor, 'foo', false, false, false);
-      expect(editor.getSearchCursor).toHaveBeenCalledWith('foo', { line: 0, ch: 0 }, { caseFold: true });
+      findSearchMatches(editor, 'a.b*(c)', false, false, false);
+      const [query, start] = editor.getSearchCursor.mock.calls[0];
+      expect(query).toBeInstanceOf(RegExp);
+      expect(query.source).toBe('a\\.b\\*\\(c\\)');
+      expect(start).toEqual({ line: 0, ch: 0 });
     });
 
-    it('passes caseFold:false when caseSensitive is true', () => {
+    it('is case-insensitive by default', () => {
+      const editor = makeMockEditor();
+      findSearchMatches(editor, 'foo', false, false, false);
+      const [query] = editor.getSearchCursor.mock.calls[0];
+      expect(query.flags).toContain('i');
+    });
+
+    it('is case-sensitive when caseSensitive=true', () => {
       const editor = makeMockEditor();
       findSearchMatches(editor, 'foo', false, true, false);
-      expect(editor.getSearchCursor).toHaveBeenCalledWith('foo', { line: 0, ch: 0 }, { caseFold: false });
+      const [query] = editor.getSearchCursor.mock.calls[0];
+      expect(query.flags).not.toContain('i');
     });
 
     it('returns all matches from the editor cursor', () => {

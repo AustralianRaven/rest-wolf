@@ -129,6 +129,7 @@ describe('CodeEditor', () => {
       expect.anything(),
       expect.objectContaining({
         lineNumbers: false,
+        lineWrapping: false,
         mode: null,
         lint: false,
         autoCloseBrackets: false,
@@ -204,6 +205,7 @@ describe('CodeEditor', () => {
     });
 
     expect(editor.setOption).toHaveBeenCalledWith('mode', 'brunovariables');
+    expect(editor.setOption).toHaveBeenCalledWith('lineWrapping', true);
     expect(getStatusBarToggle(view)).toHaveTextContent('disable full editor');
 
     editor.setOption.mockClear();
@@ -213,6 +215,7 @@ describe('CodeEditor', () => {
     });
 
     expect(editor.setOption).toHaveBeenCalledWith('mode', null);
+    expect(editor.setOption).toHaveBeenCalledWith('lineWrapping', false);
     expect(getStatusBarToggle(view)).toHaveTextContent('enable full editor');
   });
 
