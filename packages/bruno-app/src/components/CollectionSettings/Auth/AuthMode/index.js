@@ -91,7 +91,9 @@ const AuthMode = ({ collection, excludeOptions = [], hideSavedAuths = false }) =
       <div className="inline-flex items-center cursor-pointer auth-mode-selector" data-testid="auth-mode-selector">
         <MenuDropdown
           items={groups}
-          placement="bottom-end"
+          placement="bottom-start"
+          appendTo={() => document.body}
+          hideOnReferenceClip={true}
           selectedItemId={selectedItemId}
           showGroupDividers={true}
           groupStyle="select"

@@ -4,6 +4,7 @@ const _ = require('lodash');
 const { parseEnvironment, stringifyEnvironment } = require('@usebruno/filestore');
 const { parseValueByDataType } = require('@usebruno/common/utils');
 const { writeFile, createDirectory, withFileLock } = require('../utils/filesystem');
+const { renameEnvironmentExtendsReferences } = require('../utils/environments');
 const { generateUidBasedOnHash, uuid } = require('../utils/common');
 const { decryptStringSafe } = require('../utils/encryption');
 const EnvironmentSecretsStore = require('./env-secrets');
@@ -120,7 +121,7 @@ class GlobalEnvironmentsManager {
     }
   }
 
-  async createGlobalEnvironment(workspacePath, { uid, name, variables, color }) {
+  async createGlobalEnvironment(workspacePath, { uid, name, variables, color, extends: inheritedGlobalEnvironmentName }) {
     try {
       if (!workspacePath) {
         throw new Error('Workspace path is required');
@@ -144,6 +145,10 @@ class GlobalEnvironmentsManager {
         color
       };
 
+      if (inheritedGlobalEnvironmentName) {
+        environment.extends = inheritedGlobalEnvironmentName;
+      }
+
       if (this.envHasSecrets(environment)) {
         environmentSecretsStore.storeEnvSecrets(workspacePath, environment);
       }
@@ -162,7 +167,7 @@ class GlobalEnvironmentsManager {
     }
   }
 
-  async saveGlobalEnvironment(workspacePath, { environmentUid, variables, auth, color }) {
+  async saveGlobalEnvironment(workspacePath, { environmentUid, variables, auth, color, extends: inheritedGlobalEnvironmentName }) {
     try {
       if (!workspacePath) {
         throw new Error('Workspace path is required');
@@ -174,34 +179,38 @@ class GlobalEnvironmentsManager {
         throw new Error(`Environment file not found for uid: ${environmentUid}`);
       }
 
-      // Preserve auth if not explicitly provided in this save (we don't want a vars-only
-      // save to wipe an environment's auth config).
-      let preservedAuth;
-      try {
-        const existing = await this.parseEnvironmentFile(envFile.filePath, workspacePath);
-        preservedAuth = existing?.auth;
-      } catch (e) {
-        preservedAuth = undefined;
-      }
-
-      const finalAuth = auth !== undefined ? auth : preservedAuth;
-
-      const environment = {
-        name: envFile.name,
-        variables: variables
-      };
-      if (finalAuth && finalAuth.mode && finalAuth.mode !== 'none') {
-        environment.auth = finalAuth;
-      }
-
-      if (color) {
-        environment.color = color;
-      }
-
       // Serialize concurrent writes per env file. Two rapid scripted
       // bru.setGlobalEnvVar() persist calls can otherwise overlap and the
       // second writer's stringify+write can land before the first, dropping it.
       await withFileLock(envFile.filePath, async () => {
+        const savedEnvironment = await this.parseEnvironmentFile(envFile.filePath, workspacePath);
+
+        // The whole file is rewritten, so start from what is on disk and overlay only
+        // the fields this save carries. Callers that just persist variables omit the
+        // rest, and anything omitted must survive the write.
+        const environment = {
+          ...savedEnvironment,
+          name: envFile.name,
+          variables: variables
+        };
+
+        if (color !== undefined) {
+          environment.color = color;
+        }
+
+        // A save carrying auth replaces it; 'none' clears it so the file holds no empty auth block.
+        if (auth !== undefined) {
+          if (auth && auth.mode && auth.mode !== 'none') {
+            environment.auth = auth;
+          } else {
+            delete environment.auth;
+          }
+        }
+
+        if (inheritedGlobalEnvironmentName !== undefined) {
+          environment.extends = inheritedGlobalEnvironmentName;
+        }
+
         if (this.envHasSecrets(environment)) {
           environmentSecretsStore.storeEnvSecrets(workspacePath, environment);
         }
@@ -254,6 +263,13 @@ class GlobalEnvironmentsManager {
       if (envFile.filePath !== newFilePath) {
         fs.unlinkSync(envFile.filePath);
       }
+
+      await renameEnvironmentExtendsReferences({
+        environmentsDirPath: this.getEnvironmentsDir(workspacePath),
+        format: 'yml',
+        oldName,
+        newName
+      });
 
       const newUid = generateUidBasedOnHash(newFilePath);
       return { uid: newUid, name: newName };
@@ -308,6 +324,37 @@ class GlobalEnvironmentsManager {
     }
   }
 
+  async saveGlobalEnvironmentExtends(workspacePath, environmentUid, inheritedGlobalEnvironmentName) {
+    try {
+      if (!workspacePath) {
+        throw new Error('Workspace path is required');
+      }
+
+      const envFile = this.findEnvironmentFileByUid(workspacePath, environmentUid);
+
+      if (!envFile) {
+        throw new Error(`Environment file not found for uid: ${environmentUid}`);
+      }
+
+      await withFileLock(envFile.filePath, async () => {
+        const environment = await this.parseEnvironmentFile(envFile.filePath, workspacePath);
+
+        if (inheritedGlobalEnvironmentName) {
+          environment.extends = inheritedGlobalEnvironmentName;
+        } else {
+          delete environment.extends;
+        }
+
+        const content = stringifyEnvironment(environment, { format: 'yml' });
+        await writeFile(envFile.filePath, content);
+      });
+
+      return true;
+    } catch (error) {
+      throw error;
+    }
+  }
+
   async getGlobalEnvironmentsByPath(workspacePath) {
     return this.getGlobalEnvironments(workspacePath);
   }
@@ -330,6 +377,10 @@ class GlobalEnvironmentsManager {
 
   async updateGlobalEnvironmentColorByPath(workspacePath, { environmentUid, color }) {
     return this.updateGlobalEnvironmentColor(workspacePath, environmentUid, color);
+  }
+
+  async saveGlobalEnvironmentExtendsByPath(workspacePath, { environmentUid, extends: inheritedGlobalEnvironmentName }) {
+    return this.saveGlobalEnvironmentExtends(workspacePath, environmentUid, inheritedGlobalEnvironmentName);
   }
 }
 

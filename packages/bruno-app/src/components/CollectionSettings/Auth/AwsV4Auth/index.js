@@ -1,6 +1,5 @@
 import React from 'react';
 import SensitiveFieldWarning from 'components/SensitiveFieldWarning';
-import { useDetectSensitiveField } from 'hooks/useDetectSensitiveField';
 import get from 'lodash/get';
 import { useTheme } from 'providers/Theme';
 import { useDispatch } from 'react-redux';
@@ -17,9 +16,6 @@ const AwsV4Auth = ({ collection, authData, onAuthChange, onSave }) => {
   const awsv4Auth = generic
     ? (authData?.awsv4 || {})
     : (collection.draft?.root ? get(collection, 'draft.root.request.auth.awsv4', {}) : get(collection, 'root.request.auth.awsv4', {}));
-
-  const sensitive = useDetectSensitiveField(generic ? null : collection);
-  const { showWarning, warningMessage } = generic ? { showWarning: false, warningMessage: '' } : sensitive.isSensitive(awsv4Auth?.secretAccessKey);
 
   const handleSave = () => {
     if (generic) return onSave?.();
@@ -67,19 +63,25 @@ const AwsV4Auth = ({ collection, authData, onAuthChange, onSave }) => {
           isSecret={true}
           isCompact
         />
-        {showWarning && <SensitiveFieldWarning fieldName="awsv4-secret-access-key" warningMessage={warningMessage} />}
+        {!generic && (
+          <SensitiveFieldWarning fieldName="awsv4-secret-access-key" secretName="secretAccessKey" value={awsv4Auth?.secretAccessKey} collection={collection} onReplaceValue={(val) => update({ secretAccessKey: val || '' })} />
+        )}
       </div>
 
       <label className="block mb-1">Session Token</label>
-      <div className="single-line-editor-wrapper mb-3">
+      <div className="single-line-editor-wrapper mb-3 flex items-center">
         <SingleLineEditor
           value={awsv4Auth.sessionToken || ''}
           theme={storedTheme}
           onSave={handleSave}
           onChange={(val) => update({ sessionToken: val || '' })}
           collection={generic ? undefined : collection}
+          isSecret={true}
           isCompact
         />
+        {!generic && (
+          <SensitiveFieldWarning fieldName="awsv4-session-token" secretName="sessionToken" value={awsv4Auth?.sessionToken} collection={collection} onReplaceValue={(val) => update({ sessionToken: val || '' })} />
+        )}
       </div>
 
       <label className="block mb-1">Service</label>

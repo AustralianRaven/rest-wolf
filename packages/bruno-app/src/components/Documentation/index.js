@@ -42,12 +42,13 @@ const Documentation = ({ item, collection }) => {
   }
 
   return (
-    <StyledWrapper className="h-full w-full relative">
+    <StyledWrapper className="h-full w-full min-w-0 max-w-full relative">
       <DocsEditor
         docs={docs}
         onEdit={onEdit}
         onSave={onSave}
         isEditing={isEditing}
+        item={item}
         collection={collection}
         collectionPath={collection?.pathname}
         onRequestEdit={() => setEditing(true)}
